@@ -42,6 +42,7 @@ python tools/convert_hf_to_torch_dist.py \
 ### 4.1 启动 SGLang 服务
 
 训练需启动两个 SGLang 推理服务（分别用于 Executor/Verifier 和 Planner）：
+
 注意，agentflow_qwen25_7b_rl_v2.sh里面会杀掉所有的python进程，所以最好等训练脚本的脚本kill完进程开始加载之后训练进程之后再启动SGLang推理服务
 
 ```bash
@@ -60,7 +61,7 @@ CUDA_VISIBLE_DEVICES=6,7 python3 -m sglang.launch_server \
   --tp 2
 ```
 
-等待两个服务均就绪后，再执行训练。
+训练过程需要这两个服务。
 
 ### 4.2 启动训练
 
