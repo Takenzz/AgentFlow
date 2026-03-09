@@ -42,6 +42,8 @@ python tools/convert_hf_to_torch_dist.py \
 
 Two SGLang inference services must be running before training starts (one for Executor/Verifier, one for Planner):
 
+Note: The script agentflow_qwen25_7b_rl_v2.sh will kill all Python processes. Therefore, it is recommended to start the SGLang inference service only after the training script has finished killing processes and begun loading the training process.
+
 ```bash
 export SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
 
@@ -60,7 +62,7 @@ CUDA_VISIBLE_DEVICES=6,7 python3 -m sglang.launch_server \
   --tp 2
 ```
 
-Wait for both services to be ready before launching training.
+ these two SGLang services are required for training
 
 ### 4.2 Launch Training
 
