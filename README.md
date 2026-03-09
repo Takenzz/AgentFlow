@@ -54,6 +54,8 @@ Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with gr
 |---|---|---|---|---|
 | Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
 
+> **Note:** Due to limited training resources, the AgentFlow model was only trained for 100 steps.
+
 
 #### Training Configuration
 

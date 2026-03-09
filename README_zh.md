@@ -47,6 +47,8 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 |---|---|---|---|---|
 | Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
 
+> **注：** 受训练资源限制，AgentFlow 模型仅训练了 100 步。
+
 #### 训练配置
 
 - **算法**：GRPO，KL 散度约束（`low_var_kl`）
