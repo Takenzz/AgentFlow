@@ -49,6 +49,8 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 
 > **注：** 受训练资源限制，AgentFlow 模型仅训练了 100 步。
 
+训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
+
 #### 训练配置
 
 - **算法**：GRPO，KL 散度约束（`low_var_kl`）

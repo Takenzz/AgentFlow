@@ -56,6 +56,8 @@ Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with gr
 
 > **Note:** Due to limited training resources, the AgentFlow model was only trained for 100 steps.
 
+The trained model weights have been released on HuggingFace: [LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
+
 
 #### Training Configuration
 
