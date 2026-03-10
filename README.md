@@ -1,5 +1,6 @@
 # Agentic RL Reproductions with Slime
 
+![Slime agentic icon](./imgs/icon.png)
 Reproductions of various **Agentic RL** training methods, built on top of the [slime](https://github.com/THUDM/slime) framework.
 
 slime exposes flexible hooks for custom `generate` functions and reward functions, making it straightforward to integrate multi-step agent rollouts into RL training pipelines. This repository implements and reproduces representative Agentic RL algorithms on top of that foundation. All implementations live under the [`agentic/`](./agentic) directory.

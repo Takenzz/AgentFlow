@@ -1,5 +1,5 @@
 # Agentic RL Reproductions with Slime
-
+![Slime agentic icon](./imgs/icon.png)
 基于 [slime](https://github.com/THUDM/slime) 框架，复现各类 **Agentic RL** 训练方法。
 
 slime 提供了灵活的自定义 `generate` 函数与 reward 函数接口，使得将多步 agent rollout 接入 RL 训练流程变得简洁高效。本仓库在此基础上实现并复现若干有代表性的 Agentic RL 算法，所有实现均位于 [`agentic/`](./agentic) 目录下。
