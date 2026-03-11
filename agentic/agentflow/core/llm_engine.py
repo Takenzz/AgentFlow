@@ -128,8 +128,11 @@ class QwenEngine:
         sampling_params 支持 max_tokens / temperature / top_p 等标准字段。
         超时、连接失败、限流（503）自动指数退避重试。
         """
+        import random
+        import logging
         import openai
 
+        logger = logging.getLogger(__name__)
         params = {**self.default_params, **(sampling_params or {})}
         max_tokens = params.pop("max_new_tokens", None) or params.pop("max_tokens", None) or self.max_tokens
 

@@ -34,8 +34,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from llm_engine import SGLangEngine                          # noqa: E402
-from rewarder import Rewarder                                # noqa: E402
+from core.llm_engine import SGLangEngine                     # noqa: E402
+from core.rewarder import Rewarder                           # noqa: E402
 from slime.rollout.rm_hub.math_dapo_utils import (          # noqa: E402
     last_boxed_only_string,
     normalize_final_answer,

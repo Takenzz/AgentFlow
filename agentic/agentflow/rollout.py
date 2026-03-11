@@ -9,9 +9,9 @@ from slime.rollout.sglang_rollout import GenerateState
 from slime.rollout.rm_hub.math_dapo_utils import last_boxed_only_string, remove_boxed, normalize_final_answer
 from slime.utils.types import Sample
 from slime.utils.metric_utils import compute_rollout_step
-from llm_engine import SGLangEngine
-from solver import Solver
-from rewarder import Rewarder
+from core.llm_engine import SGLangEngine
+from core.solver import Solver
+from core.rewarder import Rewarder
 
 TOOLS_DIR = Path(__file__).parent / "tools"
 _SAVE_TRAJECTORY = os.environ.get("SAVE_TRAJECTORY", "0").lower() in ("1", "true", "yes")

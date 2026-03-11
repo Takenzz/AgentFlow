@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-from llm_engine import SGLangEngine, GenerationOutput
-from formatters import QueryAnalysis
-from memory import Memory
+from .llm_engine import SGLangEngine, GenerationOutput
+from .formatters import QueryAnalysis
+from .memory import Memory
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,6 @@ class Planner:
                 toolbox_metadata[tool_name] = {
                     "description": tool_description or "",
                 }
-                #print(f"[Planner] 已加载工具: {tool_name}")
 
         return available_tools, toolbox_metadata
 
@@ -156,7 +155,6 @@ Rules:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            #enable_thinking=False,
         )
 
 

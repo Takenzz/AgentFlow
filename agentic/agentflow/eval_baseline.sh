@@ -54,8 +54,9 @@ AUTO_START=${AUTO_START:-1}
 # ── 环境准备 ──────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+SLIME_ROOT="$(cd -- "${SCRIPT_DIR}/../.." &>/dev/null && pwd)"
 
-export PYTHONPATH="/root/Megatron-LM/:${SCRIPT_DIR}:/root/slime:${PYTHONPATH:-}"
+export PYTHONPATH="/root/Megatron-LM/:${SCRIPT_DIR}:${SLIME_ROOT}:${PYTHONPATH:-}"
 
 # ── 构建 Python 命令参数 ───────────────────────────────────────────────────────
 

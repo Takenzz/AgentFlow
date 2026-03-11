@@ -5,7 +5,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from llm_engine import SGLangEngine
+from .llm_engine import SGLangEngine
 
 # Tool name mapping: Static fallback mapping (long external names to internal)
 TOOL_NAME_MAPPING_LONG = {
@@ -100,9 +100,6 @@ class Executor:
             command = "Invalid response type."
 
         command = normalize_code(command)
-        #print("parsed_analysis: ", analysis)
-        #print("parsed_explanation: ", explanation)
-        #print("parsed_command: ", command)
         return analysis, explanation, command
 
     async def generate_tool_command(self,query: str,context: str,sub_goal: str,tool_name: str,tool_metadata: dict,step_count: int) -> str:
@@ -267,5 +264,3 @@ execution = tool.execute(query=\"\"\"Find the number of intersections of y = 4*g
             return execution
         except Exception as exc:
             return f"Tool execution error ({tool_name}): {exc}"
-
-
