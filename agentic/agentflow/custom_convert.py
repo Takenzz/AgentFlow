@@ -5,7 +5,7 @@ Splits each multi-turn trajectory into independent training samples (one per tur
 with all turns from the same trajectory sharing the same normalized advantage.
 
 Usage:
-    --custom-convert-samples-to-train-data-path agentic/agentflow/custom_convert.py:custom_convert
+     --custom-convert-samples-to-train-data-path custom_convert.custom_convert
 """
 
 import logging
