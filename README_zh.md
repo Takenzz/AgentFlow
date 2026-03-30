@@ -45,9 +45,7 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 
 | 模型 | 数据集 | Baseline | AgentFlow（复现） | 提升 |
 |---|---|---|---|---|
-| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
-
-> **注：** 受训练资源限制，AgentFlow 模型仅训练了 100 步。
+| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 30.0% | +20.0% |
 
 训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
 

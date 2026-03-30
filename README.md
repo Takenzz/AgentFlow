@@ -53,9 +53,8 @@ Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with gr
 
 | Model | Dataset | Baseline | AgentFlow (Ours) | Improvement |
 |---|---|---|---|---|
-| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
+| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 30.0% | +20.0% |
 
-> **Note:** Due to limited training resources, the AgentFlow model was only trained for 100 steps.
 
 The trained model weights have been released on HuggingFace: [LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
 
