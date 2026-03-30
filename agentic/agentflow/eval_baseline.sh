@@ -12,10 +12,10 @@ set -e
 # ── 可按需修改的配置 ──────────────────────────────────────────────────────────
 
 # 待评估的模型权重（HF 格式）
-MODEL_PATH=${MODEL_PATH:-"/data/model/qwen25_7b/"}
+MODEL_PATH=${MODEL_PATH:-"/data/models/qwen25_7b"}
 
 # Tokenizer 路径
-TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/model/qwen25_7b/"}
+TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/models/qwen25_7b"}
 
 # 评估数据集（格式：名称 JSONL路径，可追加多组）
 EVAL_DATA=(

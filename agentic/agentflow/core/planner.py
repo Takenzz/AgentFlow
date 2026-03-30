@@ -171,7 +171,9 @@ Rules:
         messages = [{"role": "user", "content": content}]
         return await self.llm_engine.generate(messages)
 
-    async def generate_final_output(self, query_analysis: str, question: str, memory: Memory) -> str:
+    async def generate_final_output(
+        self, query_analysis: str, question: str, memory: Memory, llm_engine=None
+    ) -> str:
         prompt_generate_final_output = f"""
 Task: Generate the final output based on the query and the results from all tools used.
 
@@ -186,4 +188,5 @@ Instructions:
 3. You MUST end your response with the final answer enclosed in \\boxed{{}}. For example: \\boxed{{42}}.
 """
         messages = [{"role": "user", "content": prompt_generate_final_output}]
-        return await self.llm_engine.generate(messages)
+        engine = llm_engine if llm_engine is not None else self.llm_engine
+        return await engine.generate(messages)

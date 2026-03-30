@@ -134,12 +134,13 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
     )
     try:
         engine_map = {
-            "default":  engine,
-            "planner":  engine,
-            "executor": generate_engine,
-            "verifier": generate_engine,
+            "default":       engine,
+            "planner":       engine,
+            "executor":      generate_engine,
+            "verifier":      generate_engine,
             "base_generator": generate_engine,
-            "python_coder": coder_engine,
+            "python_coder":  coder_engine,
+            "final_output":  generate_engine,  # 固定用 base 模型生成答案，不参与训练
         }
         solver = Solver(engine_map=engine_map, tools_dir=str(TOOLS_DIR), trajectory_dir=str(TRAJECTORY_DIR) if TRAJECTORY_DIR else None)
         label = str(sample.label) if sample.label is not None else None

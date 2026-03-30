@@ -289,7 +289,6 @@ async def run_eval(
         max_new_tokens=2048,
     )
 
-    # verifier 与 rollout.py 保持一致：使用 executor_engine（generate_engine，非 coder_engine）
     engine_map = {
         "default":        planner_engine,
         "planner":        planner_engine,
@@ -297,6 +296,7 @@ async def run_eval(
         "verifier":       executor_engine,
         "base_generator": executor_engine,
         "python_coder":   coder_engine,
+        "final_output":   executor_engine,  # 与训练保持一致：固定用 base 模型生成答案
     }
 
     solver = Solver(
@@ -340,8 +340,8 @@ def parse_args() -> argparse.Namespace:
     # 服务器连接（服务已在运行时使用）
     # 对应 rollout.py 中的三个引擎：
     #   planner_url   → engine          (sglang_router / 主模型)
-    #   executor_url  → generate_engine (port 30000，executor / base_generator)
-    #   coder_url     → coder_engine    (port 30001，verifier / python_coder)
+    #   executor_url  → generate_engine (port 30000，executor / verifier / base_generator / final_output)
+    #   coder_url     → coder_engine    (port 30001，python_coder)
     srv_grp = p.add_argument_group("服务器连接")
     srv_grp.add_argument("--planner-url",  default="http://127.0.0.1:30000/generate",
                          help="Planner / default 引擎的 SGLang generate URL")

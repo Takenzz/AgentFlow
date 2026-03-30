@@ -2,14 +2,16 @@
 
 
 # Cleanup previous runs
-pkill -9 sglang
-sleep 3
-ray stop --force
-pkill -9 ray
-pkill -9 python
-sleep 3
-pkill -9 ray
-pkill -9 python
+if [ "${SKIP_PROCESS_KILL}" != "1" ]; then
+    pkill -9 sglang
+    sleep 3
+    ray stop --force
+    pkill -9 ray
+    pkill -9 python
+    sleep 3
+    pkill -9 ray
+    pkill -9 python
+fi
 
 set -ex
 
@@ -25,6 +27,7 @@ fi
 
 # Prevent ray from buffering stdout/stderr
 export PYTHONBUFFERED=16
+export SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
 
 # Detect NVLink availability
 NVLINK_COUNT=$(nvidia-smi topo -m 2>/dev/null | grep -o 'NV[0-9][0-9]*' | wc -l)
@@ -43,8 +46,8 @@ source "${SCRIPT_DIR}/../../scripts/models/qwen2.5-7B.sh"
 
 # Checkpoint arguments
 CKPT_ARGS=(
-   --hf-checkpoint /data/Qwen2.5-7B-Instruct
-   --ref-load /data/qwen2.5_7b_dist/
+   --hf-checkpoint /data/models/qwen25_7b
+   --ref-load /data/models/qwen2.5_7b_dist/
    --save /data/AgentFlow_Qwen25-7B-RL/
    --save-interval 100
 )
@@ -131,7 +134,7 @@ WANDB_ARGS=()
 SGLANG_ARGS=(
    --rollout-num-gpus-per-engine 4
    --sglang-mem-fraction-static 0.75
-   --sglang-context-length 65536
+   --sglang-context-length 131072
 )
 
 # Misc arguments
@@ -162,7 +165,8 @@ RUNTIME_ENV_JSON="{
     \"PYTHONPATH\": \"/root/Megatron-LM/:${SCRIPT_DIR}:/root/slime\",
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
-    \"SAVE_TRAJECTORY\": \"${SAVE_TRAJECTORY}\"
+    \"SAVE_TRAJECTORY\": \"${SAVE_TRAJECTORY}\",
+    \"SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN\": \"1\"
   }
 }"
 

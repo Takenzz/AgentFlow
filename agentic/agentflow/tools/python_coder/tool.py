@@ -147,7 +147,12 @@ class Python_Coder_Tool(BaseTool):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
             ]
-            out = await self.llm_engine.generate(messages)
+            out = await asyncio.wait_for(
+                self.llm_engine.generate(messages),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            return f"Code generation error: LLM timed out after 120s"
         except Exception as exc:
             return f"Code generation error: {exc}"
 

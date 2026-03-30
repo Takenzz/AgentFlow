@@ -15,7 +15,7 @@ set -e
 MODEL_PATH=${MODEL_PATH:-"/data/AgentFlow_pro-Qwen25-7B-RL/"}
 
 # Tokenizer 路径（通常与原始 HF 基座模型保持一致）
-TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/model/qwen25_7b/"}
+TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/models/qwen25_7b"}
 
 # 评估数据集（格式：名称 JSONL路径，可追加多组）
 EVAL_DATA=(
@@ -35,7 +35,7 @@ TP=${TP:-4}
 MEM_FRACTION=${MEM_FRACTION:-0.7}
 
 # SGLang context length
-CTX_LEN=${CTX_LEN:-65536}
+CTX_LEN=${CTX_LEN:-131072}
 
 # 并发评估协程数（越大越快，但受显存和服务器吞吐限制）
 CONCURRENCY=${CONCURRENCY:-16}
@@ -130,7 +130,7 @@ if [ "${AUTO_START}" != "1" ]; then
     echo "     --context-length ${CTX_LEN} --trust-remote-code &"
     echo ""
     echo "   python -m sglang.launch_server \\"
-    echo "     --model-path Qwen/Qwen2.5-Coder-7B-Instruct --port ${CODER_PORT} \\"
+    echo "     --model-path /data/models/qwen2.5_7b_codeer --port ${CODER_PORT} \\"
     echo "     --tp ${TP} --mem-fraction-static ${MEM_FRACTION} \\"
     echo "     --context-length ${CTX_LEN} --trust-remote-code &"
     echo "============================================================"

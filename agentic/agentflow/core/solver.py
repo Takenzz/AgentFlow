@@ -24,7 +24,7 @@ class Solver:
     planner / final_output 未指定时自动使用 "default"。
     """
 
-    MAX_TOTAL_TOKENS = 16384
+    MAX_TOTAL_TOKENS = 131072
 
     def __init__(
         self,
@@ -43,6 +43,7 @@ class Solver:
         if self._trajectory_dir:
             self._trajectory_dir.mkdir(parents=True, exist_ok=True)
 
+        self._final_output_engine = _get("final_output")
         self.planner  = Planner(llm_engine=_get("planner"),  tools_dir=tools_dir)
         _module_keys = {"default", "planner", "executor", "verifier"}
         tools_engine_map = {k: v for k, v in engine_map.items() if k not in _module_keys}
@@ -162,16 +163,13 @@ class Solver:
                             total_token_count, self.MAX_TOTAL_TOKENS, step_count)
                 break
 
-        # ── final_output（独立训练序列，最后一条）──
+        # ── final_output（由固定的 final_output engine 生成，不加入训练 turns）──
+        # reward 仍从 final_output.response 中计算，但 base 模型的输出不参与 loss。
         final_output_text = ""
         try:
-            final_output = await self.planner.generate_final_output(analysis.response, question, memory)
-            turns.append({
-                "tokens": list(final_output.prompt_token_ids) + list(final_output.token_ids),
-                "response_length": len(final_output.token_ids),
-                "loss_mask": [1] * len(final_output.token_ids),
-                "rollout_log_probs": list(final_output.log_probs),
-            })
+            final_output = await self.planner.generate_final_output(
+                analysis.response, question, memory, llm_engine=self._final_output_engine
+            )
             final_output_text = final_output.response
             response_text += (
                 f"\n\n===== [final_output prompt] =====\n{final_output.prompt_text}"

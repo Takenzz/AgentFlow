@@ -5,7 +5,7 @@ Splits each multi-turn trajectory into independent training samples (one per tur
 with all turns from the same trajectory sharing the same normalized advantage.
 
 Usage:
-    --custom-convert-samples-to-train-data-path agentic/agentflow/custom_convert.py:custom_convert
+     --custom-convert-samples-to-train-data-path custom_convert.custom_convert
 """
 
 import logging
@@ -72,13 +72,15 @@ def custom_convert(args, samples):
             continue
 
         turns = meta["turns"]
-        norm_reward = normalized_rewards[i]
+        # Divide by T_i so that summing over turns gives (1/T_i) * sum_t,
+        # matching the J_Flow-GRPO objective which averages across turns.
+        norm_reward = normalized_rewards[i] / len(turns)
         is_truncated = 1 if sample.status == sample.Status.TRUNCATED else 0
 
         for turn in turns:
             tokens_list.append(turn["tokens"])
             response_lengths.append(turn["response_length"])
-            lm = turn["loss_mask"]
+            lm = list(turn["loss_mask"])
             if sample.remove_sample:
                 lm = [0] * turn["response_length"]
             loss_masks.append(lm)
