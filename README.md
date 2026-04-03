@@ -106,16 +106,6 @@ Each memory-update turn is an independent training sequence. The reward is evenl
 Evaluated on **RULER-HQA** across context lengths from 7K to 448K tokens (5 runs, best score reported):
 ![MemAgent Result](./imgs/memagent_result.png)
 
-| Model                   | 7K    | 14K   | 28K   | 56K   | 112K  | 224K  | 448K  |
-|-------------------------|-------|-------|-------|-------|-------|-------|-------|
-| **MemAgent (ours)**     | **78.12** | **76.56** | **75.78** | **74.22** | **77.34** | **72.66** | **69.53** |
-| QwenLong-L1-32B         | 72.66 | 75.00 | 72.66 | 60.94 | 31.25 | 17.19 | 13.28 |
-| Qwen2.5-Instruct-14B-1M | 60.16 | 60.94 | 50.00 | 57.03 | 50.00 | 37.50 | 8.59  |
-| Qwen2.5-Instruct-7B-1M  | 61.72 | 56.25 | 53.91 | 55.47 | 51.56 | 33.59 | 12.50 |
-| DS-Distill-Qwen-32B     | 70.31 | 66.41 | 65.62 | 46.88 | 23.44 | 13.28 | 7.81  |
-| DS-Distill-Qwen-14B     | 64.06 | 64.84 | 57.03 | 40.62 | 14.84 | 8.59  | 3.12  |
-| DS-Distill-Qwen-7B      | 30.47 | 12.50 | 3.12  | 0.00  | 0.00  | 0.78  | 0.00  |
-
 MemAgent (ours) is trained on a **7B** base model and consistently outperforms all baselines, including much larger models, across all context lengths.
 The trained model weights have been released on HuggingFace: [LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B)
 
