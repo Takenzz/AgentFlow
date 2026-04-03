@@ -1,0 +1,358 @@
+nohup: ignoring input
+[09:42:22] ============================================
+[09:42:22] Step -1: 终止残留的评测任务 (eval_orchestra.py)
+[09:42:22] ============================================
+[09:42:22] 发现残留进程，发送 SIGKILL ...
+[09:42:25] 残留 eval_orchestra.py 已清理
+[09:42:25] ============================================
+[09:42:25] Step 0: 清理所有旧进程
+[09:42:25] ============================================
+2026-04-03 09:42:28,217	INFO scripts.py:1364 -- Did not find any active Ray processes.
+[09:42:31] 旧进程已清理
+[09:42:31] ============================================
+[09:42:31] Step 1: 启动 Expert 服务 & 检索服务
+[09:42:31] ============================================
+[09:42:31] 启动检索服务 (GPU 0, port 8000)...
+[09:42:31] 检索服务 PID=2383828，日志: /tmp/orchestra_eval_logs/retrieval.log
+[09:42:31] 启动 Qwen3-32B-FP8 (GPU 1, port 30001)...
+[09:42:31] Qwen3-32B-FP8 PID=2383831，日志: /tmp/orchestra_eval_logs/sglang_30001.log
+[09:42:31] 启动 Qwen2.5-Coder-32B (GPU 2, port 30002)...
+[09:42:31] Qwen2.5-Coder-32B PID=2383834，日志: /tmp/orchestra_eval_logs/sglang_30002.log
+[09:42:31] 启动 Qwen2.5-Math-7B (GPU 3, port 30003)...
+[09:42:31] Qwen2.5-Math-7B PID=2383837，日志: /tmp/orchestra_eval_logs/sglang_30003.log
+[09:42:31] 启动 Qwen3-14B (GPU 4, port 30004)...
+[09:42:31] Qwen3-14B PID=2383840，日志: /tmp/orchestra_eval_logs/sglang_30004.log
+[09:42:31] 启动 DeepSeek-R1-Distill-32B (GPU 5, port 30005)...
+[09:42:31] DeepSeek-R1-Distill-32B PID=2383843，日志: /tmp/orchestra_eval_logs/sglang_30005.log
+[09:42:31] 启动 Qwen3-30B-A3B (GPU 6, port 30006)...
+[09:42:31] Qwen3-30B-A3B PID=2383846，日志: /tmp/orchestra_eval_logs/sglang_30006.log
+[09:42:31] 启动 Qwen2.5-Math-72B (GPU 7, port 30007)...
+[09:42:31] Qwen2.5-Math-72B PID=2383849，日志: /tmp/orchestra_eval_logs/sglang_30007.log
+[09:42:31] ============================================
+[09:42:31] Step 2: 启动 Orchestrator SGLang
+[09:42:31] ============================================
+[09:42:31] 启动 Orchestrator (GPU 0, port 30000)...
+[09:42:31]   ckpt: /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/
+[09:42:31] Orchestrator PID=2383856，日志: /tmp/orchestra_eval_logs/sglang_orch.log
+[09:42:31] ============================================
+[09:42:31] Step 3: 等待所有服务就绪（模型加载需要几分钟）
+[09:42:31] ============================================
+[09:42:31] 等待 检索服务 (127.0.0.1:8000) 就绪...
+[09:42:56] 检索服务 已就绪 (25s)
+[09:42:56] 等待 SGLang-30001(Qwen3-32B) (127.0.0.1:30001) 就绪...
+[09:43:56]   还在等待 SGLang-30001(Qwen3-32B)... (60s)
+[09:44:31] SGLang-30001(Qwen3-32B) 已就绪 (95s)
+[09:44:31] 等待 SGLang-30002(Coder-32B) (127.0.0.1:30002) 就绪...
+[09:44:31] SGLang-30002(Coder-32B) 已就绪 (0s)
+[09:44:31] 等待 SGLang-30003(Math-7B) (127.0.0.1:30003) 就绪...
+[09:44:31] SGLang-30003(Math-7B) 已就绪 (0s)
+[09:44:31] 等待 SGLang-30004(Qwen3-14B) (127.0.0.1:30004) 就绪...
+[09:44:31] SGLang-30004(Qwen3-14B) 已就绪 (0s)
+[09:44:31] 等待 SGLang-30005(DeepSeek-R1-32B) (127.0.0.1:30005) 就绪...
+[09:44:31] SGLang-30005(DeepSeek-R1-32B) 已就绪 (0s)
+[09:44:31] 等待 SGLang-30006(Qwen3-30B-A3B) (127.0.0.1:30006) 就绪...
+[09:44:31] SGLang-30006(Qwen3-30B-A3B) 已就绪 (0s)
+[09:44:31] 等待 SGLang-30007(Math-72B) (127.0.0.1:30007) 就绪...
+[09:44:31] SGLang-30007(Math-72B) 已就绪 (0s)
+[09:44:31] 等待 Orchestrator (127.0.0.1:30000) 就绪...
+[09:44:31] Orchestrator 已就绪 (0s)
+[09:44:31] 所有服务已就绪！
+[09:44:31] ============================================
+[09:44:31] Step 4: 开始评测 benchmark=tau2
+[09:44:31] ============================================
+[python] Using conda env: sglang
+[09:44:31] 模型路径(tokenizer): /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/
+[09:44:31] 输出目录: /data/eval_results/tau2_<timestamp>/
+[09:44:31] 命令: conda run -n sglang --no-capture-output python /data/slime-agentic/agentic/ToolOrchestra/eval_orchestra.py --benchmark tau2 --model-url http://127.0.0.1:30000/v1 --model-name /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/ --output-dir /data/eval_results --context-length 131072 --concurrency 64 --max-turns 12 --temperature 0.7 --user-llm qwen-turbo-latest --clean-previous
+
+2026-04-03 09:44:33,257 [INFO] eval_orchestra: tau2 subprocess Python: /usr/bin/python3
+2026-04-03 09:44:35,532 [INFO] eval_orchestra: Loading tokenizer from /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/ ...
+2026-04-03 09:44:35,805 [INFO] eval_orchestra: Tokenizer loaded: vocab_size=151643
+2026-04-03 09:44:35,806 [INFO] eval_orchestra: SGLang /generate URL: http://127.0.0.1:30000/generate
+2026-04-03 09:44:35,806 [WARNING] eval_orchestra: --clean-previous: removing all tau2_* under /data/eval_results. Do not run two evals on the same output-dir at once, or the other run's folder may be deleted mid-flight.
+2026-04-03 09:44:35,806 [INFO] eval_orchestra: Removing previous result dir: /data/eval_results/tau2_20260403_093259
+2026-04-03 09:44:35,820 [INFO] eval_orchestra: Benchmark: tau2
+2026-04-03 09:44:35,820 [INFO] eval_orchestra: Loading eval data from /data/ToolOrchestra/data/eval_tau2.jsonl
+2026-04-03 09:44:35,829 [INFO] eval_orchestra: Total examples: 269
+2026-04-03 09:44:35,829 [INFO] eval_orchestra: Orchestrator: /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/ @ http://127.0.0.1:30000/v1 (generate: http://127.0.0.1:30000/generate)
+2026-04-03 09:44:35,829 [INFO] eval_orchestra: Context length: 131072
+2026-04-03 09:44:35,829 [INFO] eval_orchestra: Output dir: /data/eval_results/tau2_20260403_094435
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 1/269 | avg_score=0.000 pass=0 fail=1 | 20s elapsed, eta 1h31m | mock____update_task_with_initialization_actions ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 2/269 | avg_score=0.500 pass=1 fail=1 | 21s elapsed, eta 46m16s | mock____update_task_with_history_and_env_assertions ✓
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 3/269 | avg_score=0.333 pass=1 fail=2 | 21s elapsed, eta 30m53s | mock____update_task_with_initialization_data ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 4/269 | avg_score=0.250 pass=1 fail=3 | 21s elapsed, eta 23m04s | mock____update_task_1 ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 5/269 | avg_score=0.200 pass=1 fail=4 | 21s elapsed, eta 18m44s | mock____update_task_with_message_history ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 6/269 | avg_score=0.167 pass=1 fail=5 | 22s elapsed, eta 16m04s | mock____impossible_task_1 ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 7/269 | avg_score=0.143 pass=1 fail=6 | 26s elapsed, eta 16m14s | retail____17 ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 8/269 | avg_score=0.125 pass=1 fail=7 | 32s elapsed, eta 17m17s | mock____create_task_1 ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 9/269 | avg_score=0.111 pass=1 fail=8 | 41s elapsed, eta 19m31s | airline____0 ✗
+[Eval] [░░░░░░░░░░░░░░░░░░░░░░░░░] 10/269 | avg_score=0.100 pass=1 fail=9 | 42s elapsed, eta 18m20s | retail____6 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 11/269 | avg_score=0.182 pass=2 fail=9 | 51s elapsed, eta 19m49s | telecom____[mobile_data_issue]airplane_mode_on|user_abroad_roaming_enabled_off[PERSONA:None] ✓
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 12/269 | avg_score=0.250 pass=3 fail=9 | 53s elapsed, eta 18m56s | mock____create_task_1_nl_eval ✓
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 13/269 | avg_score=0.231 pass=3 fail=10 | 53s elapsed, eta 17m32s | mock____create_task_1_with_env_assertions ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 14/269 | avg_score=0.286 pass=4 fail=10 | 55s elapsed, eta 16m40s | retail____18 ✓
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 15/269 | avg_score=0.267 pass=4 fail=11 | 56s elapsed, eta 15m55s | airline____18 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 16/269 | avg_score=0.312 pass=5 fail=11 | 58s elapsed, eta 15m18s | retail____0 ✓
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 17/269 | avg_score=0.294 pass=5 fail=12 | 1m02s elapsed, eta 15m25s | retail____15 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 18/269 | avg_score=0.278 pass=5 fail=13 | 1m03s elapsed, eta 14m52s | airline____11 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 19/269 | avg_score=0.263 pass=5 fail=14 | 1m05s elapsed, eta 14m22s | airline____15 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 20/269 | avg_score=0.250 pass=5 fail=15 | 1m06s elapsed, eta 13m41s | retail____12 ✗
+[Eval] [█░░░░░░░░░░░░░░░░░░░░░░░░] 21/269 | avg_score=0.286 pass=6 fail=15 | 1m09s elapsed, eta 13m43s | bank____14142 ✓
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 22/269 | avg_score=0.273 pass=6 fail=16 | 1m09s elapsed, eta 13m03s | retail____2 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 23/269 | avg_score=0.304 pass=7 fail=16 | 1m14s elapsed, eta 13m16s | airline____16 ✓
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 24/269 | avg_score=0.292 pass=7 fail=17 | 1m15s elapsed, eta 12m49s | retail____16 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 25/269 | avg_score=0.280 pass=7 fail=18 | 1m15s elapsed, eta 12m17s | airline____1 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 26/269 | avg_score=0.308 pass=8 fail=18 | 1m17s elapsed, eta 12m00s | airline____5 ✓
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 27/269 | avg_score=0.296 pass=8 fail=19 | 1m18s elapsed, eta 11m45s | retail____3 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 28/269 | avg_score=0.321 pass=9 fail=19 | 1m19s elapsed, eta 11m27s | retail____10 ✓
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 29/269 | avg_score=0.310 pass=9 fail=20 | 1m20s elapsed, eta 11m02s | retail____7 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 30/269 | avg_score=0.300 pass=9 fail=21 | 1m24s elapsed, eta 11m10s | airline____12 ✗
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 31/269 | avg_score=0.323 pass=10 fail=21 | 1m24s elapsed, eta 10m46s | airline____19 ✓
+[Eval] [██░░░░░░░░░░░░░░░░░░░░░░░] 32/269 | avg_score=0.312 pass=10 fail=22 | 1m26s elapsed, eta 10m39s | bank____12675 ✗
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 33/269 | avg_score=0.303 pass=10 fail=23 | 1m26s elapsed, eta 10m21s | retail____1 ✗
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 34/269 | avg_score=0.324 pass=11 fail=23 | 1m30s elapsed, eta 10m22s | bank____10218 ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 35/269 | avg_score=0.343 pass=12 fail=23 | 1m30s elapsed, eta 10m04s | retail____11 ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 36/269 | avg_score=0.361 pass=13 fail=23 | 1m31s elapsed, eta 9m52s | telecom____[mobile_data_issue]bad_network_preference|user_abroad_roaming_enabled_off[PERSONA:Hard] ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 37/269 | avg_score=0.378 pass=14 fail=23 | 1m31s elapsed, eta 9m34s | telecom____[mobile_data_issue]bad_network_preference|bad_vpn|data_mode_off|data_saver_mode_on[PERSONA:None] ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 38/269 | avg_score=0.395 pass=15 fail=23 | 1m32s elapsed, eta 9m22s | retail____5 ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 39/269 | avg_score=0.385 pass=15 fail=24 | 1m33s elapsed, eta 9m10s | telecom____[mobile_data_issue]data_mode_off|data_usage_exceeded[PERSONA:None] ✗
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 40/269 | avg_score=0.375 pass=15 fail=25 | 1m35s elapsed, eta 9m04s | retail____13 ✗
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 41/269 | avg_score=0.366 pass=15 fail=26 | 1m35s elapsed, eta 8m48s | airline____17 ✗
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 42/269 | avg_score=0.381 pass=16 fail=26 | 1m36s elapsed, eta 8m39s | bank____17021 ✓
+[Eval] [███░░░░░░░░░░░░░░░░░░░░░░] 43/269 | avg_score=0.372 pass=16 fail=27 | 1m36s elapsed, eta 8m27s | retail____8 ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 44/269 | avg_score=0.386 pass=17 fail=27 | 1m37s elapsed, eta 8m20s | bank____18509 ✓
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 45/269 | avg_score=0.378 pass=17 fail=28 | 1m38s elapsed, eta 8m12s | retail____9 ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 46/269 | avg_score=0.370 pass=17 fail=29 | 1m42s elapsed, eta 8m17s | telecom____[mobile_data_issue]data_mode_off|data_usage_exceeded|user_abroad_roaming_disabled_off[PERSONA:Hard] ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 47/269 | avg_score=0.383 pass=18 fail=29 | 1m43s elapsed, eta 8m10s | airline____6 ✓
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 48/269 | avg_score=0.375 pass=18 fail=30 | 1m45s elapsed, eta 8m04s | telecom____[mobile_data_issue]airplane_mode_on|data_mode_off[PERSONA:None] ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 49/269 | avg_score=0.388 pass=19 fail=30 | 1m45s elapsed, eta 7m53s | retail____14 ✓
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 50/269 | avg_score=0.380 pass=19 fail=31 | 1m45s elapsed, eta 7m42s | airline____7 ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 51/269 | avg_score=0.392 pass=20 fail=31 | 1m49s elapsed, eta 7m49s | basketball____1578 ✓
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 52/269 | avg_score=0.385 pass=20 fail=32 | 1m52s elapsed, eta 7m49s | airline____9 ✗
+[Eval] [████░░░░░░░░░░░░░░░░░░░░░] 53/269 | avg_score=0.377 pass=20 fail=33 | 1m53s elapsed, eta 7m41s | retail____19 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 54/269 | avg_score=0.370 pass=20 fail=34 | 1m53s elapsed, eta 7m31s | bank____3328 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 55/269 | avg_score=0.364 pass=20 fail=35 | 1m57s elapsed, eta 7m38s | basketball____4006 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 56/269 | avg_score=0.357 pass=20 fail=36 | 1m59s elapsed, eta 7m33s | bank____8074 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 57/269 | avg_score=0.368 pass=21 fail=36 | 1m59s elapsed, eta 7m23s | bank____8942 ✓
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 58/269 | avg_score=0.362 pass=21 fail=37 | 2m02s elapsed, eta 7m26s | basketball____2748 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 59/269 | avg_score=0.373 pass=22 fail=37 | 2m04s elapsed, eta 7m21s | basketball____11729 ✓
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 60/269 | avg_score=0.383 pass=23 fail=37 | 2m05s elapsed, eta 7m18s | bank____1518 ✓
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 61/269 | avg_score=0.393 pass=24 fail=37 | 2m05s elapsed, eta 7m09s | basketball____17537 ✓
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 62/269 | avg_score=0.387 pass=24 fail=38 | 2m06s elapsed, eta 7m02s | basketball____1977 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 63/269 | avg_score=0.381 pass=24 fail=39 | 2m10s elapsed, eta 7m05s | basketball____20 ✗
+[Eval] [█████░░░░░░░░░░░░░░░░░░░░] 64/269 | avg_score=0.375 pass=24 fail=40 | 2m10s elapsed, eta 6m56s | bank____16580 ✗
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 65/269 | avg_score=0.385 pass=25 fail=40 | 2m15s elapsed, eta 7m06s | bank____9078 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 66/269 | avg_score=0.379 pass=25 fail=41 | 2m16s elapsed, eta 6m58s | airline____14 ✗
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 67/269 | avg_score=0.388 pass=26 fail=41 | 2m16s elapsed, eta 6m50s | basketball____15556 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 68/269 | avg_score=0.382 pass=26 fail=42 | 2m18s elapsed, eta 6m49s | bank____12922 ✗
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 69/269 | avg_score=0.391 pass=27 fail=42 | 2m19s elapsed, eta 6m44s | ecommerce____12161 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 70/269 | avg_score=0.400 pass=28 fail=42 | 2m20s elapsed, eta 6m38s | ecommerce____9570 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 71/269 | avg_score=0.394 pass=28 fail=43 | 2m21s elapsed, eta 6m35s | bank____6278 ✗
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 72/269 | avg_score=0.403 pass=29 fail=43 | 2m22s elapsed, eta 6m29s | basketball____9160 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 73/269 | avg_score=0.397 pass=29 fail=44 | 2m22s elapsed, eta 6m22s | airline____8 ✗
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 74/269 | avg_score=0.405 pass=30 fail=44 | 2m23s elapsed, eta 6m17s | ecommerce____4559 ✓
+[Eval] [██████░░░░░░░░░░░░░░░░░░░] 75/269 | avg_score=0.413 pass=31 fail=44 | 2m24s elapsed, eta 6m12s | bank____11113 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 76/269 | avg_score=0.408 pass=31 fail=45 | 2m25s elapsed, eta 6m08s | basketball____2341 ✗
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 77/269 | avg_score=0.416 pass=32 fail=45 | 2m25s elapsed, eta 6m02s | basketball____14798 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 78/269 | avg_score=0.410 pass=32 fail=46 | 2m25s elapsed, eta 5m56s | retail____4 ✗
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 79/269 | avg_score=0.405 pass=32 fail=47 | 2m27s elapsed, eta 5m55s | telecom____[mobile_data_issue]data_saver_mode_on|user_abroad_roaming_enabled_off[PERSONA:Easy] ✗
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 80/269 | avg_score=0.400 pass=32 fail=48 | 2m29s elapsed, eta 5m53s | bank____7597 ✗
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 81/269 | avg_score=0.407 pass=33 fail=48 | 2m33s elapsed, eta 5m55s | ecommerce____16335 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 82/269 | avg_score=0.415 pass=34 fail=48 | 2m33s elapsed, eta 5m49s | ecommerce____2318 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 83/269 | avg_score=0.422 pass=35 fail=48 | 2m34s elapsed, eta 5m46s | bank____13815 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 84/269 | avg_score=0.417 pass=35 fail=49 | 2m38s elapsed, eta 5m50s | basketball____16771 ✗
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 85/269 | avg_score=0.424 pass=36 fail=49 | 2m41s elapsed, eta 5m49s | ecommerce____5624 ✓
+[Eval] [███████░░░░░░░░░░░░░░░░░░] 86/269 | avg_score=0.419 pass=36 fail=50 | 2m41s elapsed, eta 5m43s | medicine____4857 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 87/269 | avg_score=0.425 pass=37 fail=50 | 2m41s elapsed, eta 5m38s | ecommerce____2647 ✓
+[Eval] [████████░░░░░░░░░░░░░░░░░] 88/269 | avg_score=0.420 pass=37 fail=51 | 2m44s elapsed, eta 5m39s | medicine____5288 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 89/269 | avg_score=0.416 pass=37 fail=52 | 2m48s elapsed, eta 5m40s | basketball____16783 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 90/269 | avg_score=0.411 pass=37 fail=53 | 2m48s elapsed, eta 5m35s | medicine____2744 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 91/269 | avg_score=0.407 pass=37 fail=54 | 2m49s elapsed, eta 5m32s | bank____15908 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 92/269 | avg_score=0.402 pass=37 fail=55 | 2m50s elapsed, eta 5m27s | bank____9520 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 93/269 | avg_score=0.409 pass=38 fail=55 | 2m50s elapsed, eta 5m23s | ecommerce____88 ✓
+[Eval] [████████░░░░░░░░░░░░░░░░░] 94/269 | avg_score=0.415 pass=39 fail=55 | 2m52s elapsed, eta 5m20s | telecom____[mobile_data_issue]airplane_mode_on|bad_network_preference|user_abroad_roaming_enabled_off[PERSONA:Easy] ✓
+[Eval] [████████░░░░░░░░░░░░░░░░░] 95/269 | avg_score=0.411 pass=39 fail=56 | 2m53s elapsed, eta 5m18s | basketball____3451 ✗
+[Eval] [████████░░░░░░░░░░░░░░░░░] 96/269 | avg_score=0.417 pass=40 fail=56 | 2m56s elapsed, eta 5m18s | ecommerce____19842 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 97/269 | avg_score=0.412 pass=40 fail=57 | 2m57s elapsed, eta 5m14s | basketball____13667 ✗
+[Eval] [█████████░░░░░░░░░░░░░░░░] 98/269 | avg_score=0.418 pass=41 fail=57 | 2m59s elapsed, eta 5m13s | medicine____6469 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 99/269 | avg_score=0.424 pass=42 fail=57 | 2m59s elapsed, eta 5m08s | ecommerce____6308 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 100/269 | avg_score=0.430 pass=43 fail=57 | 3m01s elapsed, eta 5m06s | telecom____[mobile_data_issue]airplane_mode_on|bad_network_preference|data_mode_off|data_saver_mode_on[PERSONA:Hard] ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 101/269 | avg_score=0.426 pass=43 fail=58 | 3m01s elapsed, eta 5m02s | ecommerce____8980 ✗
+[Eval] [█████████░░░░░░░░░░░░░░░░] 102/269 | avg_score=0.431 pass=44 fail=58 | 3m04s elapsed, eta 5m02s | medicine____2141 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 103/269 | avg_score=0.437 pass=45 fail=58 | 3m07s elapsed, eta 5m02s | ecommerce____4585 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 104/269 | avg_score=0.442 pass=46 fail=58 | 3m08s elapsed, eta 4m59s | medicine____2938 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 105/269 | avg_score=0.448 pass=47 fail=58 | 3m09s elapsed, eta 4m56s | ecommerce____18741 ✓
+[Eval] [█████████░░░░░░░░░░░░░░░░] 106/269 | avg_score=0.443 pass=47 fail=59 | 3m09s elapsed, eta 4m51s | ecommerce____14747 ✗
+[Eval] [█████████░░░░░░░░░░░░░░░░] 107/269 | avg_score=0.439 pass=47 fail=60 | 3m12s elapsed, eta 4m51s | basketball____6530 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 108/269 | avg_score=0.435 pass=47 fail=61 | 3m12s elapsed, eta 4m47s | ecommerce____11821 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 109/269 | avg_score=0.431 pass=47 fail=62 | 3m14s elapsed, eta 4m45s | medicine____3212 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 110/269 | avg_score=0.427 pass=47 fail=63 | 3m15s elapsed, eta 4m42s | basketball____19463 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 111/269 | avg_score=0.423 pass=47 fail=64 | 3m15s elapsed, eta 4m37s | telecom____[mobile_data_issue]bad_vpn|data_mode_off|data_usage_exceeded|user_abroad_roaming_disabled_off[PERSONA:None] ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 112/269 | avg_score=0.429 pass=48 fail=64 | 3m17s elapsed, eta 4m36s | medicine____541 ✓
+[Eval] [██████████░░░░░░░░░░░░░░░] 113/269 | avg_score=0.434 pass=49 fail=64 | 3m17s elapsed, eta 4m33s | ecommerce____3134 ✓
+[Eval] [██████████░░░░░░░░░░░░░░░] 114/269 | avg_score=0.439 pass=50 fail=64 | 3m18s elapsed, eta 4m30s | medicine____1906 ✓
+[Eval] [██████████░░░░░░░░░░░░░░░] 115/269 | avg_score=0.443 pass=51 fail=64 | 3m18s elapsed, eta 4m26s | medicine____8260 ✓
+[Eval] [██████████░░░░░░░░░░░░░░░] 116/269 | avg_score=0.440 pass=51 fail=65 | 3m19s elapsed, eta 4m23s | movie____3685 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 117/269 | avg_score=0.436 pass=51 fail=66 | 3m21s elapsed, eta 4m21s | movie____16997 ✗
+[Eval] [██████████░░░░░░░░░░░░░░░] 118/269 | avg_score=0.441 pass=52 fail=66 | 3m22s elapsed, eta 4m18s | medicine____1331 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 119/269 | avg_score=0.445 pass=53 fail=66 | 3m23s elapsed, eta 4m16s | medicine____8630 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 120/269 | avg_score=0.450 pass=54 fail=66 | 3m24s elapsed, eta 4m13s | medicine____516 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 121/269 | avg_score=0.446 pass=54 fail=67 | 3m25s elapsed, eta 4m11s | medicine____4458 ✗
+[Eval] [███████████░░░░░░░░░░░░░░] 122/269 | avg_score=0.451 pass=55 fail=67 | 3m28s elapsed, eta 4m10s | medicine____7157 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 123/269 | avg_score=0.447 pass=55 fail=68 | 3m31s elapsed, eta 4m11s | ecommerce____15087 ✗
+[Eval] [███████████░░░░░░░░░░░░░░] 124/269 | avg_score=0.444 pass=55 fail=69 | 3m35s elapsed, eta 4m11s | movie____15441 ✗
+[Eval] [███████████░░░░░░░░░░░░░░] 125/269 | avg_score=0.440 pass=55 fail=70 | 3m35s elapsed, eta 4m08s | telecom____[mobile_data_issue]airplane_mode_on|bad_network_preference|data_mode_off|user_abroad_roaming_disabled_on[PERSONA:Hard] ✗
+[Eval] [███████████░░░░░░░░░░░░░░] 126/269 | avg_score=0.444 pass=56 fail=70 | 3m39s elapsed, eta 4m08s | ecommerce____1598 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 127/269 | avg_score=0.449 pass=57 fail=70 | 3m39s elapsed, eta 4m05s | movie____14862 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 128/269 | avg_score=0.453 pass=58 fail=70 | 3m41s elapsed, eta 4m03s | medicine____8452 ✓
+[Eval] [███████████░░░░░░░░░░░░░░] 129/269 | avg_score=0.450 pass=58 fail=71 | 3m43s elapsed, eta 4m02s | movie____11246 ✗
+[Eval] [████████████░░░░░░░░░░░░░] 130/269 | avg_score=0.446 pass=58 fail=72 | 3m46s elapsed, eta 4m01s | medicine____7920 ✗
+[Eval] [████████████░░░░░░░░░░░░░] 131/269 | avg_score=0.450 pass=59 fail=72 | 3m46s elapsed, eta 3m58s | movie____14215 ✓
+[Eval] [████████████░░░░░░░░░░░░░] 132/269 | avg_score=0.455 pass=60 fail=72 | 3m52s elapsed, eta 4m01s | railway____8449 ✓
+[Eval] [████████████░░░░░░░░░░░░░] 133/269 | avg_score=0.451 pass=60 fail=73 | 3m57s elapsed, eta 4m02s | telecom____[mobile_data_issue]airplane_mode_on|bad_network_preference[PERSONA:Hard] ✗
+[Eval] [████████████░░░░░░░░░░░░░] 134/269 | avg_score=0.448 pass=60 fail=74 | 3m59s elapsed, eta 4m01s | railway____7903 ✗
+[Eval] [████████████░░░░░░░░░░░░░] 135/269 | avg_score=0.452 pass=61 fail=74 | 4m07s elapsed, eta 4m05s | railway____9836 ✓
+[Eval] [████████████░░░░░░░░░░░░░] 136/269 | avg_score=0.449 pass=61 fail=75 | 4m09s elapsed, eta 4m04s | railway____3756 ✗
+[Eval] [████████████░░░░░░░░░░░░░] 137/269 | avg_score=0.453 pass=62 fail=75 | 4m11s elapsed, eta 4m01s | railway____6119 ✓
+[Eval] [████████████░░░░░░░░░░░░░] 138/269 | avg_score=0.457 pass=63 fail=75 | 4m11s elapsed, eta 3m59s | railway____4464 ✓
+[Eval] [████████████░░░░░░░░░░░░░] 139/269 | avg_score=0.460 pass=64 fail=75 | 4m12s elapsed, eta 3m55s | railway____5064 ✓
+[Eval] [█████████████░░░░░░░░░░░░] 140/269 | avg_score=0.457 pass=64 fail=76 | 4m12s elapsed, eta 3m52s | restaurant____8185 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 141/269 | avg_score=0.454 pass=64 fail=77 | 4m12s elapsed, eta 3m49s | medicine____7711 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 142/269 | avg_score=0.451 pass=64 fail=78 | 4m13s elapsed, eta 3m46s | movie____22144 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 143/269 | avg_score=0.448 pass=64 fail=79 | 4m15s elapsed, eta 3m44s | railway____6572 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 144/269 | avg_score=0.451 pass=65 fail=79 | 4m15s elapsed, eta 3m41s | ecommerce____14176 ✓
+[Eval] [█████████████░░░░░░░░░░░░] 145/269 | avg_score=0.455 pass=66 fail=79 | 4m15s elapsed, eta 3m38s | railway____221 ✓
+[Eval] [█████████████░░░░░░░░░░░░] 146/269 | avg_score=0.452 pass=66 fail=80 | 4m15s elapsed, eta 3m35s | restaurant____5035 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 147/269 | avg_score=0.456 pass=67 fail=80 | 4m19s elapsed, eta 3m35s | restaurant____9288 ✓
+[Eval] [█████████████░░░░░░░░░░░░] 148/269 | avg_score=0.453 pass=67 fail=81 | 4m21s elapsed, eta 3m34s | railway____553 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 149/269 | avg_score=0.450 pass=67 fail=82 | 4m21s elapsed, eta 3m30s | railway____3020 ✗
+[Eval] [█████████████░░░░░░░░░░░░] 150/269 | avg_score=0.447 pass=67 fail=83 | 4m22s elapsed, eta 3m28s | airline____2 ✗
+[Eval] [██████████████░░░░░░░░░░░] 151/269 | avg_score=0.450 pass=68 fail=83 | 4m24s elapsed, eta 3m26s | movie____24757 ✓
+[Eval] [██████████████░░░░░░░░░░░] 152/269 | avg_score=0.447 pass=68 fail=84 | 4m25s elapsed, eta 3m24s | movie____4302 ✗
+[Eval] [██████████████░░░░░░░░░░░] 153/269 | avg_score=0.444 pass=68 fail=85 | 4m26s elapsed, eta 3m22s | bank____7054 ✗
+[Eval] [██████████████░░░░░░░░░░░] 154/269 | avg_score=0.442 pass=68 fail=86 | 4m28s elapsed, eta 3m20s | movie____27220 ✗
+[Eval] [██████████████░░░░░░░░░░░] 155/269 | avg_score=0.439 pass=68 fail=87 | 4m28s elapsed, eta 3m17s | railway____3264 ✗
+[Eval] [██████████████░░░░░░░░░░░] 156/269 | avg_score=0.436 pass=68 fail=88 | 4m29s elapsed, eta 3m15s | railway____3640 ✗
+[Eval] [██████████████░░░░░░░░░░░] 157/269 | avg_score=0.433 pass=68 fail=89 | 4m31s elapsed, eta 3m13s | railway____6032 ✗
+[Eval] [██████████████░░░░░░░░░░░] 158/269 | avg_score=0.430 pass=68 fail=90 | 4m31s elapsed, eta 3m10s | airline____10 ✗
+[Eval] [██████████████░░░░░░░░░░░] 159/269 | avg_score=0.428 pass=68 fail=91 | 4m31s elapsed, eta 3m07s | restaurant____6543 ✗
+[Eval] [██████████████░░░░░░░░░░░] 160/269 | avg_score=0.425 pass=68 fail=92 | 4m32s elapsed, eta 3m05s | railway____4259 ✗
+[Eval] [██████████████░░░░░░░░░░░] 161/269 | avg_score=0.422 pass=68 fail=93 | 4m35s elapsed, eta 3m05s | movie____2706 ✗
+[Eval] [███████████████░░░░░░░░░░] 162/269 | avg_score=0.420 pass=68 fail=94 | 4m37s elapsed, eta 3m03s | movie____26705 ✗
+[Eval] [███████████████░░░░░░░░░░] 163/269 | avg_score=0.417 pass=68 fail=95 | 4m39s elapsed, eta 3m01s | railway____6026 ✗
+[Eval] [███████████████░░░░░░░░░░] 164/269 | avg_score=0.415 pass=68 fail=96 | 4m40s elapsed, eta 2m59s | medicine____3343 ✗
+[Eval] [███████████████░░░░░░░░░░] 165/269 | avg_score=0.412 pass=68 fail=97 | 4m42s elapsed, eta 2m57s | restaurant____687 ✗
+[Eval] [███████████████░░░░░░░░░░] 166/269 | avg_score=0.410 pass=68 fail=98 | 4m43s elapsed, eta 2m56s | movie____23527 ✗
+[Eval] [███████████████░░░░░░░░░░] 167/269 | avg_score=0.407 pass=68 fail=99 | 4m44s elapsed, eta 2m53s | telecom____[mobile_data_issue]data_usage_exceeded|user_abroad_roaming_enabled_off[PERSONA:Easy] ✗
+[Eval] [███████████████░░░░░░░░░░] 168/269 | avg_score=0.405 pass=68 fail=100 | 4m53s elapsed, eta 2m56s | railway____386 ✗
+[Eval] [███████████████░░░░░░░░░░] 169/269 | avg_score=0.402 pass=68 fail=101 | 4m55s elapsed, eta 2m55s | movie____23825 ✗
+[Eval] [███████████████░░░░░░░░░░] 170/269 | avg_score=0.406 pass=69 fail=101 | 4m56s elapsed, eta 2m52s | restaurant____10431 ✓
+[Eval] [███████████████░░░░░░░░░░] 171/269 | avg_score=0.409 pass=70 fail=101 | 4m57s elapsed, eta 2m50s | railway____3003 ✓
+[Eval] [███████████████░░░░░░░░░░] 172/269 | avg_score=0.407 pass=70 fail=102 | 4m59s elapsed, eta 2m48s | ecommerce____1115 ✗
+[Eval] [████████████████░░░░░░░░░] 173/269 | avg_score=0.410 pass=71 fail=102 | 5m03s elapsed, eta 2m48s | restaurant____1300 ✓
+[Eval] [████████████████░░░░░░░░░] 174/269 | avg_score=0.408 pass=71 fail=103 | 5m04s elapsed, eta 2m46s | movie____16744 ✗
+[Eval] [████████████████░░░░░░░░░] 175/269 | avg_score=0.406 pass=71 fail=104 | 5m09s elapsed, eta 2m46s | restaurant____1763 ✗
+[Eval] [████████████████░░░░░░░░░] 176/269 | avg_score=0.403 pass=71 fail=105 | 5m15s elapsed, eta 2m46s | restaurant____6460 ✗
+[Eval] [████████████████░░░░░░░░░] 177/269 | avg_score=0.401 pass=71 fail=106 | 5m19s elapsed, eta 2m46s | railway____5809 ✗
+[Eval] [████████████████░░░░░░░░░] 178/269 | avg_score=0.399 pass=71 fail=107 | 5m25s elapsed, eta 2m46s | restaurant____1460 ✗
+[Eval] [████████████████░░░░░░░░░] 179/269 | avg_score=0.397 pass=71 fail=108 | 5m26s elapsed, eta 2m44s | school____2872 ✗
+[Eval] [████████████████░░░░░░░░░] 180/269 | avg_score=0.400 pass=72 fail=108 | 5m28s elapsed, eta 2m42s | restaurant____660 ✓
+[Eval] [████████████████░░░░░░░░░] 181/269 | avg_score=0.398 pass=72 fail=109 | 5m29s elapsed, eta 2m40s | school____3616 ✗
+[Eval] [████████████████░░░░░░░░░] 182/269 | avg_score=0.396 pass=72 fail=110 | 5m35s elapsed, eta 2m40s | travel____665 ✗
+[Eval] [█████████████████░░░░░░░░] 183/269 | avg_score=0.393 pass=72 fail=111 | 5m37s elapsed, eta 2m38s | travel____4176 ✗
+[Eval] [█████████████████░░░░░░░░] 184/269 | avg_score=0.397 pass=73 fail=111 | 5m37s elapsed, eta 2m36s | school____2993 ✓
+[Eval] [█████████████████░░░░░░░░] 185/269 | avg_score=0.400 pass=74 fail=111 | 5m39s elapsed, eta 2m34s | restaurant____5860 ✓
+[Eval] [█████████████████░░░░░░░░] 186/269 | avg_score=0.403 pass=75 fail=111 | 5m41s elapsed, eta 2m32s | school____1213 ✓
+[Eval] [█████████████████░░░░░░░░] 187/269 | avg_score=0.401 pass=75 fail=112 | 5m42s elapsed, eta 2m30s | medicine____1363 ✗
+[Eval] [█████████████████░░░░░░░░] 188/269 | avg_score=0.404 pass=76 fail=112 | 5m42s elapsed, eta 2m27s | restaurant____7903 ✓
+[Eval] [█████████████████░░░░░░░░] 189/269 | avg_score=0.402 pass=76 fail=113 | 5m47s elapsed, eta 2m27s | restaurant____150 ✗
+[Eval] [█████████████████░░░░░░░░] 190/269 | avg_score=0.405 pass=77 fail=113 | 5m48s elapsed, eta 2m24s | travel____737 ✓
+[Eval] [█████████████████░░░░░░░░] 191/269 | avg_score=0.403 pass=77 fail=114 | 5m48s elapsed, eta 2m22s | school____3044 ✗
+[Eval] [█████████████████░░░░░░░░] 192/269 | avg_score=0.401 pass=77 fail=115 | 5m50s elapsed, eta 2m20s | school____10437 ✗
+[Eval] [█████████████████░░░░░░░░] 193/269 | avg_score=0.399 pass=77 fail=116 | 5m54s elapsed, eta 2m19s | travel____2349 ✗
+[Eval] [██████████████████░░░░░░░] 194/269 | avg_score=0.397 pass=77 fail=117 | 5m54s elapsed, eta 2m17s | school____6742 ✗
+[Eval] [██████████████████░░░░░░░] 195/269 | avg_score=0.395 pass=77 fail=118 | 5m57s elapsed, eta 2m15s | restaurant____13461 ✗
+[Eval] [██████████████████░░░░░░░] 196/269 | avg_score=0.393 pass=77 fail=119 | 6m01s elapsed, eta 2m14s | school____4748 ✗
+[Eval] [██████████████████░░░░░░░] 197/269 | avg_score=0.391 pass=77 fail=120 | 6m02s elapsed, eta 2m12s | restaurant____4413 ✗
+[Eval] [██████████████████░░░░░░░] 198/269 | avg_score=0.394 pass=78 fail=120 | 6m06s elapsed, eta 2m11s | school____89 ✓
+[Eval] [██████████████████░░░░░░░] 199/269 | avg_score=0.392 pass=78 fail=121 | 6m09s elapsed, eta 2m09s | travel____3601 ✗
+[Eval] [██████████████████░░░░░░░] 200/269 | avg_score=0.390 pass=78 fail=122 | 6m15s elapsed, eta 2m09s | school____17883 ✗
+[Eval] [██████████████████░░░░░░░] 201/269 | avg_score=0.388 pass=78 fail=123 | 6m17s elapsed, eta 2m07s | school____10566 ✗
+[Eval] [██████████████████░░░░░░░] 202/269 | avg_score=0.386 pass=78 fail=124 | 6m17s elapsed, eta 2m05s | school____16936 ✗
+[Eval] [██████████████████░░░░░░░] 203/269 | avg_score=0.384 pass=78 fail=125 | 6m18s elapsed, eta 2m02s | school____10782 ✗
+[Eval] [██████████████████░░░░░░░] 204/269 | avg_score=0.382 pass=78 fail=126 | 6m19s elapsed, eta 2m00s | school____1123 ✗
+[Eval] [███████████████████░░░░░░] 205/269 | avg_score=0.385 pass=79 fail=126 | 6m23s elapsed, eta 1m59s | travel____2050 ✓
+[Eval] [███████████████████░░░░░░] 206/269 | avg_score=0.383 pass=79 fail=127 | 6m32s elapsed, eta 1m59s | travel____2700 ✗
+[Eval] [███████████████████░░░░░░] 207/269 | avg_score=0.386 pass=80 fail=127 | 6m34s elapsed, eta 1m58s | travel____4364 ✓
+[Eval] [███████████████████░░░░░░] 208/269 | avg_score=0.389 pass=81 fail=127 | 6m35s elapsed, eta 1m56s | weather____13374 ✓
+[Eval] [███████████████████░░░░░░] 209/269 | avg_score=0.388 pass=81 fail=128 | 6m37s elapsed, eta 1m54s | school____8536 ✗
+[Eval] [███████████████████░░░░░░] 210/269 | avg_score=0.386 pass=81 fail=129 | 6m38s elapsed, eta 1m51s | movie____5008 ✗
+[Eval] [███████████████████░░░░░░] 211/269 | avg_score=0.389 pass=82 fail=129 | 6m42s elapsed, eta 1m50s | school____1853 ✓
+[Eval] [███████████████████░░░░░░] 212/269 | avg_score=0.392 pass=83 fail=129 | 6m43s elapsed, eta 1m48s | travel____3706 ✓
+[Eval] [███████████████████░░░░░░] 213/269 | avg_score=0.390 pass=83 fail=130 | 6m43s elapsed, eta 1m46s | school____3683 ✗
+[Eval] [███████████████████░░░░░░] 214/269 | avg_score=0.388 pass=83 fail=131 | 6m45s elapsed, eta 1m44s | travel____4387 ✗
+[Eval] [███████████████████░░░░░░] 215/269 | avg_score=0.386 pass=83 fail=132 | 6m50s elapsed, eta 1m43s | travel____9740 ✗
+[Eval] [████████████████████░░░░░] 216/269 | avg_score=0.389 pass=84 fail=132 | 6m50s elapsed, eta 1m40s | weather____3844 ✓
+[Eval] [████████████████████░░░░░] 217/269 | avg_score=0.387 pass=84 fail=133 | 6m50s elapsed, eta 1m38s | weather____3753 ✗
+[Eval] [████████████████████░░░░░] 218/269 | avg_score=0.390 pass=85 fail=133 | 6m52s elapsed, eta 1m36s | weather____4680 ✓
+[Eval] [████████████████████░░░░░] 219/269 | avg_score=0.393 pass=86 fail=133 | 6m52s elapsed, eta 1m34s | weather____19049 ✓
+[Eval] [████████████████████░░░░░] 220/269 | avg_score=0.391 pass=86 fail=134 | 6m59s elapsed, eta 1m33s | school____18278 ✗
+[Eval] [████████████████████░░░░░] 221/269 | avg_score=0.394 pass=87 fail=134 | 7m06s elapsed, eta 1m32s | weather____8420 ✓
+[Eval] [████████████████████░░░░░] 222/269 | avg_score=0.396 pass=88 fail=134 | 7m06s elapsed, eta 1m30s | weather____2689 ✓
+[Eval] [████████████████████░░░░░] 223/269 | avg_score=0.399 pass=89 fail=134 | 7m07s elapsed, eta 1m28s | weather____14553 ✓
+[Eval] [████████████████████░░░░░] 224/269 | avg_score=0.397 pass=89 fail=135 | 7m09s elapsed, eta 1m26s | school____14826 ✗
+[Eval] [████████████████████░░░░░] 225/269 | avg_score=0.400 pass=90 fail=135 | 7m11s elapsed, eta 1m24s | weather____14428 ✓
+[Eval] [█████████████████████░░░░] 226/269 | avg_score=0.398 pass=90 fail=136 | 7m14s elapsed, eta 1m22s | restaurant____10494 ✗
+[Eval] [█████████████████████░░░░] 227/269 | avg_score=0.396 pass=90 fail=137 | 7m15s elapsed, eta 1m20s | weather____12893 ✗
+[Eval] [█████████████████████░░░░] 228/269 | avg_score=0.399 pass=91 fail=137 | 7m16s elapsed, eta 1m18s | weather____6657 ✓
+[Eval] [█████████████████████░░░░] 229/269 | avg_score=0.402 pass=92 fail=137 | 7m21s elapsed, eta 1m17s | travel____4712 ✓
+[Eval] [█████████████████████░░░░] 230/269 | avg_score=0.400 pass=92 fail=138 | 7m28s elapsed, eta 1m16s | bank____12637 ✗
+[Eval] [█████████████████████░░░░] 231/269 | avg_score=0.398 pass=92 fail=139 | 7m28s elapsed, eta 1m13s | movie____22996 ✗
+[Eval] [█████████████████████░░░░] 232/269 | avg_score=0.397 pass=92 fail=140 | 7m29s elapsed, eta 1m11s | weather____9931 ✗
+[Eval] [█████████████████████░░░░] 233/269 | avg_score=0.395 pass=92 fail=141 | 7m34s elapsed, eta 1m10s | travel____8954 ✗
+[Eval] [█████████████████████░░░░] 234/269 | avg_score=0.393 pass=92 fail=142 | 7m35s elapsed, eta 1m08s | travel____6940 ✗
+[Eval] [█████████████████████░░░░] 235/269 | avg_score=0.391 pass=92 fail=143 | 7m35s elapsed, eta 1m05s | weather____6605 ✗
+[Eval] [█████████████████████░░░░] 236/269 | avg_score=0.390 pass=92 fail=144 | 7m38s elapsed, eta 1m04s | weather____2747 ✗
+[Eval] [██████████████████████░░░] 237/269 | avg_score=0.392 pass=93 fail=144 | 7m44s elapsed, eta 1m02s | travel____1712 ✓
+[Eval] [██████████████████████░░░] 238/269 | avg_score=0.391 pass=93 fail=145 | 7m46s elapsed, eta 1m00s | restaurant____10509 ✗
+[Eval] [██████████████████████░░░] 239/269 | avg_score=0.393 pass=94 fail=145 | 7m51s elapsed, eta 59s | weather____15046 ✓
+[Eval] [██████████████████████░░░] 240/269 | avg_score=0.396 pass=95 fail=145 | 7m52s elapsed, eta 57s | travel____7062 ✓
+[Eval] [██████████████████████░░░] 241/269 | avg_score=0.394 pass=95 fail=146 | 8m04s elapsed, eta 56s | weather____423 ✗
+[Eval] [██████████████████████░░░] 242/269 | avg_score=0.393 pass=95 fail=147 | 8m06s elapsed, eta 54s | movie____5329 ✗
+[Eval] [██████████████████████░░░] 243/269 | avg_score=0.391 pass=95 fail=148 | 8m06s elapsed, eta 52s | movie____22014 ✗
+[Eval] [██████████████████████░░░] 244/269 | avg_score=0.389 pass=95 fail=149 | 8m09s elapsed, eta 50s | travel____6841 ✗
+[Eval] [██████████████████████░░░] 245/269 | avg_score=0.388 pass=95 fail=150 | 8m12s elapsed, eta 48s | weather____1932 ✗
+[Eval] [██████████████████████░░░] 246/269 | avg_score=0.390 pass=96 fail=150 | 8m12s elapsed, eta 46s | weather____16041 ✓
+[Eval] [██████████████████████░░░] 247/269 | avg_score=0.389 pass=96 fail=151 | 8m24s elapsed, eta 45s | school____6259 ✗
+[Eval] [███████████████████████░░] 248/269 | avg_score=0.387 pass=96 fail=152 | 8m31s elapsed, eta 43s | railway____2373 ✗
+[Eval] [███████████████████████░░] 249/269 | avg_score=0.386 pass=96 fail=153 | 9m08s elapsed, eta 44s | basketball____7337 ✗
+[Eval] [███████████████████████░░] 250/269 | avg_score=0.384 pass=96 fail=154 | 9m23s elapsed, eta 43s | weather____16498 ✗
+[Eval] [███████████████████████░░] 251/269 | avg_score=0.386 pass=97 fail=154 | 9m52s elapsed, eta 42s | airline____13 ✓
+[Eval] [███████████████████████░░] 252/269 | avg_score=0.389 pass=98 fail=154 | 10m01s elapsed, eta 41s | travel____7700 ✓
+[Eval] [███████████████████████░░] 253/269 | avg_score=0.387 pass=98 fail=155 | 10m03s elapsed, eta 38s | weather____892 ✗
+2026-04-03 09:54:42,100 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.6s: Request timed out.
+[Eval] [███████████████████████░░] 254/269 | avg_score=0.386 pass=98 fail=156 | 10m15s elapsed, eta 36s | telecom____[mobile_data_issue]bad_network_preference|bad_vpn|user_abroad_roaming_disabled_on[PERSONA:None] ✗
+[Eval] [███████████████████████░░] 255/269 | avg_score=0.388 pass=99 fail=156 | 10m27s elapsed, eta 34s | travel____9048 ✓
+2026-04-03 09:55:10,910 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.8s: Request timed out.
+2026-04-03 09:55:23,719 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.9s: Request timed out.
+[Eval] [███████████████████████░░] 256/269 | avg_score=0.387 pass=99 fail=157 | 10m49s elapsed, eta 33s | telecom____[mobile_data_issue]airplane_mode_on|data_saver_mode_on|user_abroad_roaming_disabled_on[PERSONA:None] ✗
+2026-04-03 09:55:31,495 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.5s: Request timed out.
+[Eval] [███████████████████████░░] 257/269 | avg_score=0.385 pass=99 fail=158 | 11m00s elapsed, eta 31s | telecom____[mobile_data_issue]bad_network_preference|data_saver_mode_on|data_usage_exceeded[PERSONA:Hard] ✗
+2026-04-03 09:56:15,163 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.7s: Request timed out.
+[Eval] [███████████████████████░░] 258/269 | avg_score=0.384 pass=99 fail=159 | 12m25s elapsed, eta 32s | movie____23088 ✗
+[Eval] [████████████████████████░] 259/269 | avg_score=0.386 pass=100 fail=159 | 12m57s elapsed, eta 30s | restaurant____7973 ✓
+2026-04-03 09:58:29,232 [WARNING] eval_orchestra: [ExpertCaller] expert=expert-1 retry 1/2 in 1.8s: Request timed out.
+[Eval] [████████████████████████░] 260/269 | avg_score=0.388 pass=101 fail=159 | 14m26s elapsed, eta 30s | restaurant____4836 ✓
+eval_orchestra.sh: line 410: 2391105 Killed                  "${CMD[@]}" 2>&1
+[09:59:36] ========= 清理本次启动的服务 =========
+[09:59:36]   停止 PID=2383828
+[09:59:36]   停止 PID=2383831
+[09:59:36]   停止 PID=2383834
+[09:59:36]   停止 PID=2383837
+[09:59:36]   停止 PID=2383840
+[09:59:36]   停止 PID=2383843
+[09:59:36]   停止 PID=2383846
+[09:59:36]   停止 PID=2383849
+[09:59:36]   停止 PID=2383856
+[09:59:36] 清理完成
+/tmp/tmpn6i8lrfr: line 16: 2391113 Killed                  python /data/slime-agentic/agentic/ToolOrchestra/eval_orchestra.py --benchmark tau2 --model-url http://127.0.0.1:30000/v1 --model-name /data/checkpoints/orchestra_qwen3_8b_rl_hf/iter_0000069/ --output-dir /data/eval_results --context-length 131072 --concurrency 64 --max-turns 12 --temperature 0.7 --user-llm qwen-turbo-latest --clean-previous

@@ -133,6 +133,60 @@ All training parameters and launch instructions can be found in [`agentic/memage
 
 ---
 
+### ToolOrchestra — `agentic/ToolOrchestra/`
+
+Reproduces the core idea of [ToolOrchestra](https://arxiv.org/abs/2511.21689): an **Orchestrator-Expert** multi-agent framework for RL training. A central Orchestrator LLM learns to route tasks to the best specialized expert model and the corresponding tools through multi-turn tool calls. GRPO is applied to the Orchestrator's decision trajectory, enabling it to improve tool-use and routing capabilities without manually annotated intermediate steps.
+
+#### Architecture
+![ToolOrchestra Architecture](./imgs/toolorchestra_arch.jpg)
+
+```
+Input question
+  │
+  ▼
+Orchestrator LLM                        ← Decide which tool to call (loss_mask=1)
+  │
+  └─► for turn in range(max_turns):
+        │
+        ├─ parse_tool_call()            ← Parse <tool_call> from model output
+        │
+        ├─ tool call                    ← Call retrieval / external tool (loss_mask=0)
+        │    └─ FAISS retrieval service (port 8000)
+        │
+        ├─ call_expert ──────────────► Expert LLM routing (loss_mask=0)
+        │                               └─ specialist models on separate ports
+        │
+        └─ answer ──────────────────► Final answer → stop loop
+  │
+  ▼
+GenerationOutput
+  - token_ids + log_probs  (all turns concatenated)
+  - loss_mask: Orchestrator output = 1 / tool result = 0
+```
+
+#### Results
+
+![ToolOrchestra Results](./imgs/toolorche_score.jpg)
+| Model | Dataset | Baseline (Qwen3-8B) | ToolOrchestra (Ours) | Improvement |
+|---|---|---|---|---|
+| Qwen3-8B | τ²-Bench | 0.278 | 0.388 | +0.110 |
+
+The trained model weights have been released on HuggingFace: [LMIS-ORG/ToolOrchestra_Slime_Agentic_Qwen3_8B](https://huggingface.co/LMIS-ORG/ToolOrchestra_Slime_Agentic_Qwen3_8B)
+
+#### Training Configuration
+
+- **Algorithm**: GRPO with KL divergence constraint (`low_var_kl`)
+- **Model**: Qwen3-8B (replaceable)
+- **Dataset**: τ²-Bench
+- **Inference Engine**: SGLang (expert models run on separate ports)
+- **Evaluation**: τ²-Bench
+
+#### Quick Start
+
+All training parameters and launch instructions can be found in [`agentic/ToolOrchestra/`](./agentic/ToolOrchestra).
+
+---
+
 ## How It Integrates with Slime
 
 Each method hooks into the training loop via three slime customization points:

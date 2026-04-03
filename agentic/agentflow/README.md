@@ -15,6 +15,22 @@ Reproduction of AgentFlow based on the slime framework, applying GRPO to multi-s
 
 ---
 
+## 0. Environment Setup
+
+A conda environment requirement file is provided in this directory:
+
+- `sglang_requirement.txt` — dependencies for the **SGLang** inference environment (`sglang`)
+
+Create and set up the environment:
+
+```bash
+conda create -n sglang python=3.10 -y
+conda activate sglang
+pip install -r agentic/agentflow/sglang_requirement.txt
+```
+
+> Use the `sglang` environment for all SGLang inference services used during training and evaluation.
+
 ## 1. Download Datasets
 
 ```bash

@@ -15,6 +15,22 @@
 
 ---
 
+## 0. 环境安装
+
+本目录提供一个 conda 环境依赖文件：
+
+- `sglang_requirement.txt` — **SGLang** 推理环境（`sglang`）的依赖
+
+创建并配置环境：
+
+```bash
+conda create -n sglang python=3.10 -y
+conda activate sglang
+pip install -r agentic/agentflow/sglang_requirement.txt
+```
+
+> 训练和评测阶段启动 SGLang 推理服务时，均使用 `sglang` 环境。
+
 ## 1. 下载数据集
 
 ```bash
