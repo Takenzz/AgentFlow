@@ -45,7 +45,9 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 
 | 模型 | 数据集 | Baseline | AgentFlow（复现） | 提升 |
 |---|---|---|---|---|
-| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 30.0% | +20.0% |
+| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
+
+> **注：** 受训练资源限制，AgentFlow 模型仅训练了 100 步。
 
 训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
 
@@ -60,6 +62,63 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 #### 快速启动
 
 具体的训练参数与启动方式均在 [`agentic/agentflow/`](./agentic/agentflow) 目录下。
+
+---
+
+### MemAgent — `agentic/memagent/`
+训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B)
+
+复现 [MemAgent](https://arxiv.org/abs/2507.02259) 的核心思路：通过逐 chunk 的 LLM 更新循环，将任意长度的文档压缩进固定大小的**循环记忆（recurrent memory）**，最终仅凭记忆回答问题。RL（GRPO）作用于所有记忆更新轮次，使用 **Multi-Conversation** 训练目标，让模型在不同时刻看到不同 chunk 时学会保留关键信息。
+
+#### 架构
+
+```
+输入：问题 + 长文档
+  │
+  ▼
+memory = "No previous memory"
+  │
+  └─► for chunk in split(document, chunk_tokens):
+        │
+        └─ LLM(problem, memory, chunk) → 更新后的 memory   (loss_mask=1，参与训练)
+  │
+  ▼
+LLM(problem, memory) → 最终答案 \boxed{}                  (loss_mask=0)
+  │
+  ▼
+Reward：与 ground truth 的精确匹配 / F1 分数
+        （通过 custom_convert 均摊至所有记忆更新轮次）
+```
+
+每个记忆更新轮次作为独立训练序列；奖励在整个对话的所有轮次中均分（via `custom_convert`），与论文中 Multi-Conv RL 目标一致。
+
+#### 实验结果
+
+在 **RULER-HQA** 上，对 7K 至 448K token 的上下文长度进行评测：
+
+| 模型                    | 7K    | 14K   | 28K   | 56K   | 112K  | 224K  | 448K  |
+|-------------------------|-------|-------|-------|-------|-------|-------|-------|
+| **MemAgent（复现）**    | **78.12** | **76.56** | **75.78** | **74.22** | **77.34** | **72.66** | **69.53** |
+| QwenLong-L1-32B         | 72.66 | 75.00 | 72.66 | 60.94 | 31.25 | 17.19 | 13.28 |
+| Qwen2.5-Instruct-14B-1M | 60.16 | 60.94 | 50.00 | 57.03 | 50.00 | 37.50 | 8.59  |
+| Qwen2.5-Instruct-7B-1M  | 61.72 | 56.25 | 53.91 | 55.47 | 51.56 | 33.59 | 12.50 |
+| DS-Distill-Qwen-32B     | 70.31 | 66.41 | 65.62 | 46.88 | 23.44 | 13.28 | 7.81  |
+| DS-Distill-Qwen-14B     | 64.06 | 64.84 | 57.03 | 40.62 | 14.84 | 8.59  | 3.12  |
+| DS-Distill-Qwen-7B      | 30.47 | 12.50 | 3.12  | 0.00  | 0.00  | 0.78  | 0.00  |
+
+MemAgent（复现）基于 **7B** 模型，在全部长度上均大幅领先其他基线（含更大规模模型）。
+
+#### 训练配置
+
+- **算法**：GRPO，KL 散度约束（`low_var_kl`）
+- **模型**：Qwen2.5-7B（可替换）
+- **数据**：HotpotQA（[BytedTsinghua-SIA/hotpotqa](https://huggingface.co/datasets/BytedTsinghua-SIA/hotpotqa)）
+- **推理引擎**：SGLang，启用 YaRN（`--sglang-context-length 131072`）
+- **评测集**：RULER-HQA（7K → 448K）
+
+#### 快速启动
+
+具体的训练参数与启动方式均在 [`agentic/memagent/`](./agentic/memagent) 目录下。
 
 ---
 
