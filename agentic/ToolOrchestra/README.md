@@ -63,6 +63,38 @@ huggingface-cli download Qwen/Qwen3-8B \
   --local-dir /data/models/qwen3_8b
 ```
 
+### Retrieval service (FAISS dense retrieval)
+
+The HTTP retrieval service (`retrieval_general_thought.py`, port 8000) encodes queries with **[Qwen/Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B)** and searches a FAISS index over a JSONL corpus.
+
+**Default paths in code** ([`retrieval_general_thought.py`](./retrieval_general_thought.py)):
+
+| Item | Default |
+|---|---|
+| Embedding checkpoint | `/data/models/qwen3_8b_emb` (same weights as `Qwen/Qwen3-Embedding-8B`; the code also accepts the HF id string directly) |
+| Index directory (`INDEX_DIR` env) | `/data/dataset/index` (set by [`launch.sh`](./launch.sh) and [`eval_orchestra.sh`](./eval_orchestra.sh)) |
+| FAISS index file | `{INDEX_DIR}/train.index` |
+| Passage corpus | `{INDEX_DIR}/train.jsonl` |
+
+**Corpus source:** download `train.index` and `train.jsonl` from the Hugging Face dataset **[multi-train/index](https://huggingface.co/datasets/multi-train/index)** and place them under your `INDEX_DIR` (defaults to `/data/dataset/index`).
+
+Example:
+
+```bash
+# Embedding model (match the default path expected by retrieval_general_thought.py)
+huggingface-cli download Qwen/Qwen3-Embedding-8B \
+  --local-dir /data/models/qwen3_8b_emb
+
+# FAISS index + passages (training retrieval uses train.*; avoid downloading the full dataset — wiki.* is very large)
+mkdir -p /data/dataset/index
+huggingface-cli download multi-train/index \
+  --repo-type dataset \
+  --local-dir /data/dataset/index \
+  train.index train.jsonl
+```
+
+Override the index location with `INDEX_DIR` when starting the retrieval service; override the embedding path by editing `retrieval_model_path` in `retrieval_general_thought.py` (or extend the script to read from an environment variable).
+
 ## 2. Convert Model Format
 
 slime training requires converting the HuggingFace checkpoint to Megatron distributed format:

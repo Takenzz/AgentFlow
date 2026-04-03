@@ -63,6 +63,38 @@ huggingface-cli download Qwen/Qwen3-8B \
   --local-dir /data/models/qwen3_8b
 ```
 
+### 检索服务（FAISS 稠密检索）
+
+HTTP 检索服务（`retrieval_general_thought.py`，端口 8000）使用 **[Qwen/Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B)** 对查询编码，并在 FAISS 索引与 JSONL 语料上做检索。
+
+**代码中的默认路径**（[`retrieval_general_thought.py`](./retrieval_general_thought.py)）：
+
+| 项 | 默认值 |
+|---|---|
+| 嵌入模型权重 | `/data/models/qwen3_8b_emb`（与 `Qwen/Qwen3-Embedding-8B` 一致；代码也支持直接传 HF 模型 id 字符串） |
+| 索引目录（环境变量 `INDEX_DIR`） | `/data/dataset/index`（[`launch.sh`](./launch.sh)、[`eval_orchestra.sh`](./eval_orchestra.sh) 中已设置） |
+| FAISS 索引文件 | `{INDEX_DIR}/train.index` |
+| 段落语料 | `{INDEX_DIR}/train.jsonl` |
+
+**语料来源：** 从 Hugging Face 数据集 **[multi-train/index](https://huggingface.co/datasets/multi-train/index)** 下载 `train.index` 与 `train.jsonl`，放到上述 `INDEX_DIR` 下（默认即 `/data/dataset/index`）。
+
+示例：
+
+```bash
+# 嵌入模型（与 retrieval_general_thought.py 中的默认路径一致）
+huggingface-cli download Qwen/Qwen3-Embedding-8B \
+  --local-dir /data/models/qwen3_8b_emb
+
+# FAISS 索引 + 语料（训练侧检索使用 train.*；勿整库拉取，wiki.* 体积很大）
+mkdir -p /data/dataset/index
+huggingface-cli download multi-train/index \
+  --repo-type dataset \
+  --local-dir /data/dataset/index \
+  train.index train.jsonl
+```
+
+启动检索服务时可用环境变量 `INDEX_DIR` 覆盖索引目录；嵌入模型路径可在 `retrieval_general_thought.py` 里修改 `retrieval_model_path`（或自行改为从环境变量读取）。
+
 ## 2. 转换模型格式
 
 slime 训练需要将 HuggingFace checkpoint 转换为 Megatron 分布式格式：
