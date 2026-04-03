@@ -53,9 +53,8 @@ Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with gr
 
 | Model | Dataset | Baseline | AgentFlow (Ours) | Improvement |
 |---|---|---|---|---|
-| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
+| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 30.0% | +20.0% |
 
-> **Note:** Due to limited training resources, the AgentFlow model was only trained for 100 steps.
 
 The trained model weights have been released on HuggingFace: [LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
 
@@ -118,6 +117,7 @@ Evaluated on **RULER-HQA** across context lengths from 7K to 448K tokens (5 runs
 | DS-Distill-Qwen-7B      | 30.47 | 12.50 | 3.12  | 0.00  | 0.00  | 0.78  | 0.00  |
 
 MemAgent (ours) is trained on a **7B** base model and consistently outperforms all baselines, including much larger models, across all context lengths.
+The trained model weights have been released on HuggingFace: [LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B)
 
 #### Training Configuration
 

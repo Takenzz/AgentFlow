@@ -45,9 +45,8 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 
 | 模型 | 数据集 | Baseline | AgentFlow（复现） | 提升 |
 |---|---|---|---|---|
-| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 26.7% | +16.7% |
+| Qwen2.5-7B-Instruct | AIME 2024 | 10.0% | 30.0% | +20.0% |
 
-> **注：** 受训练资源限制，AgentFlow 模型仅训练了 100 步。
 
 训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/AgentFlow_Slime_Agentic_Qwen2.5_7B/tree/main)
 
@@ -107,6 +106,7 @@ Reward：与 ground truth 的精确匹配 / F1 分数
 | DS-Distill-Qwen-7B      | 30.47 | 12.50 | 3.12  | 0.00  | 0.00  | 0.78  | 0.00  |
 
 MemAgent（复现）基于 **7B** 模型，在全部长度上均大幅领先其他基线（含更大规模模型）。
+训练后的模型权重已发布至 HuggingFace：[LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B](https://huggingface.co/LMIS-ORG/MemAgent_Slime_Agentic_Qwen2.5_7B)
 
 #### 训练配置
 
