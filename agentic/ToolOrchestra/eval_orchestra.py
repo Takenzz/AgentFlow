@@ -2,13 +2,13 @@
 """
 ToolOrchestra Standalone Eval
 =============================
-独立评测脚本，支持三个 benchmark：
+Standalone evaluation script supporting three benchmarks:
 
-  1. tau2   — τ2-Bench agent 评测 (func_call 任务)
-  2. hle    — HLE (Humanity's Last Exam) QA 评测
-  3. frames — FRAMES QA 评测
+  1. tau2   — τ2-Bench agent evaluation (func_call tasks)
+  2. hle    — HLE (Humanity's Last Exam) QA evaluation
+  3. frames — FRAMES QA evaluation
 
-使用方式：
+Usage:
 
     # τ2-Bench
     python eval_orchestra.py --benchmark tau2 \
@@ -28,10 +28,10 @@ ToolOrchestra Standalone Eval
         --model-name Qwen/Qwen3-8B \
         --max-turns 15
 
-前置条件：
-    1. Orchestrator SGLang 服务已启动
-    2. Expert SGLang 服务已启动 (30001, 30002, 30003)
-    3. 检索服务已启动 (port 8000，HLE/FRAMES 的 search 工具需要)
+Prerequisites:
+    1. Orchestrator SGLang service is running
+    2. Expert SGLang services are running (30001, 30002, 30003)
+    3. Retrieval service is running (port 8000, required by the search tool for HLE/FRAMES)
 """
 
 from __future__ import annotations

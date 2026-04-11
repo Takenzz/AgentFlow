@@ -1,6 +1,6 @@
 """
-测试 SearchRetrievalTool
-运行方式：
+Test SearchRetrievalTool
+Usage:
     cd /home/ubuntu/slime-agentic/agentic/ToolOrchestra
     conda run -n orche python tools/search_retrieval/test_tool.py
 """
@@ -16,7 +16,7 @@ from tools.search_retrieval.tool import SearchRetrievalTool
 
 RETRIEVAL_URL = "http://127.0.0.1:8000/retrieve"
 
-# 从数据集里取几个真实的 eid
+# Take a few real eids from the dataset
 with open("/home/ubuntu/ToolOrchestra/data/general_thought_example_urls.json") as f:
     all_eids = list(json.load(f).keys())
 
@@ -24,7 +24,7 @@ VALID_EID = all_eids[0]
 
 
 async def test_normal_retrieval():
-    print(f"=== 测试1: 正常检索 (eid={VALID_EID}) ===")
+    print(f"=== Test 1: Normal retrieval (eid={VALID_EID}) ===")
     tool = SearchRetrievalTool(retrieval_url=RETRIEVAL_URL, eid=VALID_EID, topk=3)
     result = await tool.execute("how to prove root is unique using derivatives")
     print(result)
@@ -32,7 +32,7 @@ async def test_normal_retrieval():
 
 
 async def test_topk():
-    print(f"=== 测试2: topk=1 ===")
+    print(f"=== Test 2: topk=1 ===")
     tool = SearchRetrievalTool(retrieval_url=RETRIEVAL_URL, eid=VALID_EID, topk=1)
     result = await tool.execute("calculus derivative proof")
     print(result)
@@ -40,12 +40,12 @@ async def test_topk():
 
 
 async def test_multiple_eids():
-    print("=== 测试3: 不同 eid 的检索结果 ===")
+    print("=== Test 3: Retrieval results for different eids ===")
     for eid in all_eids[:3]:
         tool = SearchRetrievalTool(retrieval_url=RETRIEVAL_URL, eid=eid, topk=2)
         result = await tool.execute("mathematics proof theorem")
         doc_count = result.count("[Doc")
-        print(f"  eid={eid}: 返回 {doc_count} 篇文档")
+        print(f"  eid={eid}: returned {doc_count} documents")
         if doc_count > 0:
             first_line = result.split("\n")[0]
             print(f"    {first_line}")
@@ -53,7 +53,7 @@ async def test_multiple_eids():
 
 
 async def test_invalid_eid():
-    print("=== 测试4: 无效 eid ===")
+    print("=== Test 4: Invalid eid ===")
     tool = SearchRetrievalTool(retrieval_url=RETRIEVAL_URL, eid="nonexistent_999", topk=3)
     result = await tool.execute("test query")
     print(result)
@@ -61,7 +61,7 @@ async def test_invalid_eid():
 
 
 async def test_connection_error():
-    print("=== 测试5: 连接失败 ===")
+    print("=== Test 5: Connection failure ===")
     tool = SearchRetrievalTool(retrieval_url="http://127.0.0.1:9999/retrieve", eid=VALID_EID)
     result = await tool.execute("test query")
     print(result)
@@ -69,7 +69,7 @@ async def test_connection_error():
 
 
 async def test_concurrent():
-    print("=== 测试6: 并发请求 ===")
+    print("=== Test 6: Concurrent requests ===")
     tools = [
         SearchRetrievalTool(retrieval_url=RETRIEVAL_URL, eid=eid, topk=2)
         for eid in all_eids[:5]
@@ -85,7 +85,7 @@ async def test_concurrent():
     results = await asyncio.gather(*tasks)
     for i, result in enumerate(results):
         doc_count = result.count("[Doc")
-        print(f"  并发请求 {i+1}: 返回 {doc_count} 篇文档")
+        print(f"  Concurrent request {i+1}: returned {doc_count} documents")
     print()
 
 
@@ -96,7 +96,7 @@ async def main():
     await test_invalid_eid()
     await test_connection_error()
     await test_concurrent()
-    print("所有测试完成。")
+    print("All tests completed.")
 
 
 if __name__ == "__main__":

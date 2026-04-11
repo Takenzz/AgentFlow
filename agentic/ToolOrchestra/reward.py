@@ -1,24 +1,26 @@
 """
-ToolOrchestra Reward — per-sample 特征提取器
-=============================================
-reward_func 只负责提取每个 rollout 的原始特征：
+ToolOrchestra Reward — per-sample feature extractor
+=====================================================
+reward_func is responsible only for extracting the raw per-rollout features:
     correctness (0/1), total_cost, total_latency, tool_counts
 
-真正的 preference-weighted reward + GRPO 标准化在 custom_convert.py 中完成，
-因为它需要看到同一道题的所有 rollout 做相对比较（min-max 归一化）。
+The actual preference-weighted reward + GRPO normalization is done in custom_convert.py,
+because it needs to see all rollouts for the same question for cross-rollout comparison
+(min-max normalization).
 
-score 字段返回 correctness（0/1），作为 custom_convert 的基础输入。
+The score field returns correctness (0/1) as the base input for custom_convert.
 
-QA 二次判分（可选）：
-    当 category 为 qa（非 func_call）且规则匹配判为错误时，调用百炼（DashScope）API
-    让模型判断学答是否与标准答案等价；若判定正确则将 correctness 置为 1。
-    环境变量（与 LLM_CALL.py 共享）：
-      QA_REWARD_JUDGE_ENABLED=1        （默认开启，设为 0 关闭）
-      DASHSCOPE_API_KEY                （API Key，LLM_CALL.py 中已有默认值）
-      DASHSCOPE_BASE_URL               （默认 https://dashscope.aliyuncs.com/compatible-mode/v1）
-      QA_REWARD_JUDGE_MODEL=qwen-turbo-latest  （判对错用 turbo 够了，省 token）
+QA second-pass judging (optional):
+    When category is qa (not func_call) and the rule-based match judges wrong,
+    calls the DashScope API to ask the model whether the student answer is equivalent
+    to the ground truth; if judged correct, sets correctness to 1.
+    Environment variables (shared with LLM_CALL.py):
+      QA_REWARD_JUDGE_ENABLED=1        (enabled by default; set to 0 to disable)
+      DASHSCOPE_API_KEY                (API Key, already has a default in LLM_CALL.py)
+      DASHSCOPE_BASE_URL               (default: https://dashscope.aliyuncs.com/compatible-mode/v1)
+      QA_REWARD_JUDGE_MODEL=qwen-turbo-latest  (turbo is sufficient for correctness judging, saves tokens)
       QA_REWARD_JUDGE_TIMEOUT=60
-      QA_REWARD_JUDGE_MAX_CHARS=12000  （单段截断长度）
+      QA_REWARD_JUDGE_MAX_CHARS=12000  (per-segment truncation length)
 """
 
 from __future__ import annotations
@@ -131,11 +133,11 @@ async def _async_qa_llm_judge(
     question: str = "",
 ) -> tuple[bool, str]:
     """
-    Call DashScope (百炼) API to judge QA correctness.
+    Call DashScope API to judge QA correctness.
     Returns (is_correct, raw_response_or_error).
     On failure, returns (False, error message).
     """
-    # 复用 LLM_CALL.py 的百炼配置
+    # Reuse the DashScope configuration from LLM_CALL.py
     api_key  = os.environ.get("DASHSCOPE_API_KEY")
     if not api_key:
         raise EnvironmentError(

@@ -1,15 +1,16 @@
 """
 PromptBuilder
 -------------
-根据训练数据样本构建 Orchestrator 的输入 prompt。
+Builds the Orchestrator's input prompt from training data samples.
 
-支持两种 category：
-- qa:        问题 + 上下文（检索文档 / 代码片段 / 已有答案），工具列表为 enhance_reasoning / search / answer
-- func_call: 由 tau2 环境驱动，工具为 call_expert
+Supports two categories:
+- qa:        question + context (retrieved documents / code snippets / existing answers),
+             tool list: enhance_reasoning / search / answer
+- func_call: driven by the tau2 environment, tool: call_expert
 
-输出格式：
-    messages: list[dict]   标准 chat messages
-    tools:    list[dict]   OpenAI function call 格式的工具定义列表
+Output format:
+    messages: list[dict]   standard chat messages
+    tools:    list[dict]   tool definition list in OpenAI function calling format
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ SYSTEM_PROMPT = "You are an orchestrator. You must ALWAYS call the appropriate t
 
 def _to_tools_list(tools_field: Any) -> list[dict]:
     """
-    数据里 tools 字段可能是单个 dict（func_call）或 list（qa），统一转成 list。
+    The tools field in the data may be a single dict (func_call) or a list (qa);
+    normalize to a list in either case.
     """
     if isinstance(tools_field, list):
         return tools_field
@@ -38,8 +40,8 @@ def _build_context_str(
     max_context_chars: int = 24000,
 ) -> str:
     """
-    将检索文档、代码片段、已有答案拼接成上下文字符串。
-    整体长度截断到 max_context_chars。
+    Concatenate retrieved documents, code snippets, and existing answers into a context string.
+    Total length is truncated to max_context_chars.
     """
     doc_str = ""
     for i, doc in enumerate(documents, 1):
@@ -70,8 +72,8 @@ def _build_context_str(
 
 class PromptBuilder:
     """
-    构建 Orchestrator 输入 prompt 的工具类。
-    每次调用 build() 返回 (messages, tools)。
+    Utility class for building the Orchestrator's input prompt.
+    Each call to build() returns (messages, tools).
     """
 
     def build_qa(
@@ -83,14 +85,14 @@ class PromptBuilder:
         attempts: list[dict] | None = None,
     ) -> tuple[list[dict], list[dict]]:
         """
-        构建 qa 类型的 prompt。
+        Build a prompt for the qa category.
 
         Args:
-            problem:       问题文本
-            tools_field:   数据中的 tools 字段（list 或 dict）
-            documents:     已检索到的文档列表
-            code_snippets: 代码执行结果列表，每项含 code / output
-            attempts:      已有的答案尝试列表，每项含 model / answer
+            problem:       Question text
+            tools_field:   The tools field from the data (list or dict)
+            documents:     List of already-retrieved documents
+            code_snippets: List of code execution results; each item contains code / output
+            attempts:      List of existing answer attempts; each item contains model / answer
 
         Returns:
             (messages, tools)
@@ -119,12 +121,13 @@ class PromptBuilder:
         tools_field: Any,
     ) -> tuple[list[dict], list[dict]]:
         """
-        构建 func_call 类型的 prompt。
-        conversation 是 tau2 环境传入的多轮对话（已含 system/user/assistant/tool 轮次）。
+        Build a prompt for the func_call category.
+        conversation is the multi-turn dialogue passed in by the tau2 environment
+        (already contains system/user/assistant/tool turns).
 
         Args:
-            conversation:  完整的多轮对话 messages
-            tools_field:   数据中的 tools 字段
+            conversation:  Full multi-turn conversation messages
+            tools_field:   The tools field from the data
 
         Returns:
             (messages, tools)
@@ -140,16 +143,17 @@ class PromptBuilder:
         result: str,
     ) -> list[dict]:
         """
-        把工具执行结果追加到对话中（tool role），供下一轮 Orchestrator 继续推理。
+        Append a tool execution result to the conversation (as a tool role message),
+        so the Orchestrator can continue reasoning in the next turn.
 
         Args:
-            messages:     当前对话
-            tool_call_id: 对应 assistant 消息中的 tool call id
-            tool_name:    工具名称
-            result:       工具返回的字符串结果
+            messages:     Current conversation
+            tool_call_id: The tool call ID from the corresponding assistant message
+            tool_name:    Name of the tool
+            result:       String result returned by the tool
 
         Returns:
-            追加了 tool 消息的新 messages 列表
+            New messages list with the tool message appended
         """
         return messages + [
             {

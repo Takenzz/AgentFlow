@@ -1,15 +1,15 @@
 """
 OrchestraSolver
 ---------------
-ToolOrchestra Orchestrator 主循环，符合 slime-agentic Solver 接口约定：
+Main loop for the ToolOrchestra Orchestrator, conforming to the slime-agentic Solver interface:
 
-    __init__(engine_map, sample_meta, ...)   — 接收引擎 + 样本元数据
-    solve(question, label=None)              — 固定接口，与 agentflow.Solver 一致
-    返回 GenerationOutput                    — 含 turns / loss_mask，供 custom_convert 展开
+    __init__(engine_map, sample_meta, ...)   — receives engines + sample metadata
+    solve(question, label=None)              — fixed interface, consistent with agentflow.Solver
+    returns GenerationOutput                 — contains turns / loss_mask for custom_convert to unroll
 
-每轮训练序列：
-    Orchestrator 输出 tokens → loss_mask = 1
-    tool result (注入 prompt) tokens → loss_mask = 0
+Per-turn training sequence:
+    Orchestrator output tokens → loss_mask = 1
+    tool result (injected into prompt) tokens → loss_mask = 0
 """
 
 from __future__ import annotations
@@ -59,18 +59,18 @@ class OrchestraSolver:
     """
     Args:
         engine_map:        {"default": SGLangEngine, ...}
-                           取 "orchestrator" 或 "default" 作为 Orchestrator 引擎。
-                           SGLangEngine 携带 tokenizer 和 SGLang /generate URL。
-        sample_meta:       每条样本的元数据，字段：
+                           Uses "orchestrator" or "default" as the Orchestrator engine.
+                           SGLangEngine carries the tokenizer and the SGLang /generate URL.
+        sample_meta:       Per-sample metadata with fields:
                                category       "qa" | "func_call"
-                               tools          工具定义列表（OpenAI function calling 格式）
+                               tools          Tool definition list (OpenAI function calling format)
                                model_mapping  {role: model_name}
-                               eid            样本 id（FAISS 过滤用）
-                               pref_vec       偏好权重（reward 用）
-                               answer         ground truth（reward 用）
-        retrieval_url:     FAISS 检索服务地址
-        expert_engine_map: {model_name: base_url}，供 ExpertCallerTool 用
-        max_turns:         最大工具调用轮数
+                               eid            Sample ID (used for FAISS document filtering)
+                               pref_vec       Preference weights (used for reward)
+                               answer         Ground truth (used for reward)
+        retrieval_url:     Address of the FAISS retrieval service
+        expert_engine_map: {model_name: base_url}, used by ExpertCallerTool
+        max_turns:         Maximum number of tool-calling turns
     """
 
     def __init__(
@@ -97,7 +97,7 @@ class OrchestraSolver:
         self._expert_consecutive_failures = 0
         self._expert_circuit_breaker_limit = 2
 
-    # ── 固定接口 ──────────────────────────────────────────────────────────────
+    # ── Fixed interface ───────────────────────────────────────────────────────
 
     async def solve(self, question: str, label: str | None = None) -> GenerationOutput:
         meta     = self._meta
@@ -346,7 +346,7 @@ class OrchestraSolver:
 
         return self._build_output(turns, first_out, finish_reason, final_answer="")
 
-    # ── 内部：生成（含 tools 注入）────────────────────────────────────────────
+    # ── Internal: generation (with tools injection) ───────────────────────────
 
     async def _generate_with_tools(
         self,
@@ -354,8 +354,8 @@ class OrchestraSolver:
         tools: list[dict],
     ) -> GenerationOutput:
         """
-        用 tokenizer.apply_chat_template(tools=...) 构建 prompt_text，
-        再调用 SGLang /generate，返回 GenerationOutput（含 token_ids / log_probs）。
+        Build prompt_text using tokenizer.apply_chat_template(tools=...),
+        then call SGLang /generate and return a GenerationOutput (containing token_ids / log_probs).
         """
         tokenizer = self._engine.tokenizer
 
@@ -402,7 +402,7 @@ class OrchestraSolver:
             finish_reason=finish_reason,
         )
 
-    # ── 内部：工具执行 ────────────────────────────────────────────────────────
+    # ── Internal: tool execution ──────────────────────────────────────────────
 
     @staticmethod
     def _truncate_middle_turns(tokenizer, messages: list[dict], max_tokens: int) -> list[dict]:
@@ -499,7 +499,7 @@ class OrchestraSolver:
 
         return res
 
-    # ── answer: 要求专家输出结构化答案 ────────────────────────────────────────
+    # ── answer: ask the expert to produce a structured answer ─────────────────
 
     async def _execute_answer(
         self, tc, question: str,
@@ -567,7 +567,7 @@ class OrchestraSolver:
 
         return ""
 
-    # ── search: 两段式 — 先让专家写 query，再调检索 ──────────────────────────
+    # ── search: two-phase — expert writes query first, then retrieval is called ─
 
     async def _execute_search(
         self, tc, question: str,
@@ -615,7 +615,7 @@ class OrchestraSolver:
                 return q
         return fallback
 
-    # ── enhance_reasoning: 深度推理，有专属 system prompt ────────────────────
+    # ── enhance_reasoning: deep reasoning with a dedicated system prompt ────────
 
     async def _execute_reasoning(
         self, tc, question: str,
@@ -639,7 +639,7 @@ class OrchestraSolver:
         self._context_parts.append(f"[Reasoning by {role_name}]\n{result}")
         return result, False, None, self._make_stats(query, result, elapsed)
 
-    # ── call_expert: func_call 任务，传完整对话+tools 做原生 tool calling ────
+    # ── call_expert: func_call task — pass full conversation + tools for native tool calling ──
 
     async def _execute_call_expert(
         self, tc, question: str,
@@ -691,7 +691,7 @@ class OrchestraSolver:
 
         return result_text, False, None, self._make_stats(query_text, result_text, elapsed)
 
-    # ── 内部：组装 GenerationOutput ───────────────────────────────────────────
+    # ── Internal: assemble GenerationOutput ──────────────────────────────────
 
     @staticmethod
     def _build_output(
@@ -701,9 +701,9 @@ class OrchestraSolver:
         final_answer: str,
     ) -> GenerationOutput:
         """
-        与 agentflow.Solver 相同的 turns 拼接逻辑：
-          turn[0]: 只拼入 response tokens（prompt 单独存 prompt_token_ids）
-          turn[1+]: 拼入完整 tokens（prompt 部分 loss_mask=0，response 部分 loss_mask=1）
+        Same turns concatenation logic as agentflow.Solver:
+          turn[0]: only response tokens are concatenated (prompt stored separately in prompt_token_ids)
+          turn[1+]: full tokens concatenated (prompt portion loss_mask=0, response portion loss_mask=1)
         """
         if not turns or first_out is None:
             return GenerationOutput(
@@ -769,7 +769,7 @@ class OrchestraSolver:
             turns=turns,
         )
 
-    # ── 内部：func_call 初始对话 ──────────────────────────────────────────────
+    # ── Internal: func_call initial conversation ──────────────────────────────
 
     @staticmethod
     def _build_func_call_conv(meta: dict) -> list[dict]:

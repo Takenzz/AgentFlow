@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-准备 ToolOrchestra 评测数据
-============================
-从 ToolOrchestra 原始评测数据（frames.jsonl + tau2 original_tasks.json）
-生成评测 JSONL，model_mapping 与训练数据 (data_slime_full.jsonl) 保持一致。
+Prepare ToolOrchestra evaluation data
+======================================
+Generate evaluation JSONL from raw ToolOrchestra eval data (frames.jsonl + tau2 original_tasks.json),
+with model_mapping consistent with the training data (data_slime_full.jsonl).
 
-输出：
-  - <SCRIPT_DIR>/data/eval_frames.jsonl  — QA 评测（frames benchmark）
-  - <SCRIPT_DIR>/data/eval_tau2.jsonl    — func_call 评测（tau2 benchmark）
-  - <SCRIPT_DIR>/data/eval_combined.jsonl — 合并（tau2 + QA）
+Output:
+  - <SCRIPT_DIR>/data/eval_frames.jsonl   — QA evaluation (frames benchmark)
+  - <SCRIPT_DIR>/data/eval_tau2.jsonl     — func_call evaluation (tau2 benchmark)
+  - <SCRIPT_DIR>/data/eval_combined.jsonl — combined (tau2 + QA)
 
-使用：
+Usage:
     python prepare_eval_data.py
     python prepare_eval_data.py --max-per-domain 10 --max-qa 100
 """
@@ -20,7 +20,7 @@ import json
 import os
 from pathlib import Path
 
-# ── 与训练数据保持一致的 model_mapping ─────────────────────────────────────── #
+# ── model_mapping consistent with the training data ──────────────────────── #
 FUNC_CALL_MODEL_MAPPING = {
     "expert-1": "Qwen/Qwen3-32B",
     "expert-2": "Qwen/Qwen3-30B-A3B",
@@ -49,19 +49,19 @@ TOOL_PRICING = {
     "Qwen/Qwen2.5-Math-72B-Instruct":           {"input_tokens_per_million": 1.2e-6, "output_tokens_per_million": 1.2e-6},
 }
 
-# 脚本所在目录（用作相对基准）
+# Directory containing this script (used as the relative base)
 _SCRIPT_DIR = Path(__file__).parent.resolve()
 
-# tau2 数据目录（slime-agentic 本地副本）
+# tau2 data directory (local copy in slime-agentic)
 TAU2_DATA_DIR = _SCRIPT_DIR / "tau2_data"
 
-# 训练数据（用于提取各 domain 的 task examples）
+# Training data (used to extract task examples for each domain)
 TRAIN_DATA_JSONL = _SCRIPT_DIR / "data" / "data.jsonl"
 
-# QA 数据（frames）
+# QA data (frames)
 FRAMES_JSONL = _SCRIPT_DIR / "evaluation" / "frames.jsonl"
 
-# 输出目录
+# Output directory
 OUTPUT_DIR = _SCRIPT_DIR / "data"
 
 

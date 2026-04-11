@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Baseline 评估脚本
-不使用 AgentFlow 框架，直接单轮 QA：问题 → 模型回答 → 判断正确性 → 汇总得分。
+Baseline evaluation script
+Single-turn QA without the AgentFlow framework: question → model answer → correctness check → aggregate score.
 
-用法（服务器已在运行）：
+Usage (server already running):
     python eval_baseline.py \\
         --tokenizer /data/model/qwen25_7b/ \\
         --eval-data aime /data/aime-2024/aime-2024.jsonl \\
         --output baseline_results.json
 
-用法（自动拉起 SGLang 服务器）：
+Usage (auto-launch SGLang server):
     python eval_baseline.py \\
         --model /data/AgentFlow_pro-Qwen25-7B-RL/ \\
         --start-server --tp 4 \\
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import httpx
 
-# ── 保证 agentflow 目录可 import ────────────────────────────────────────────────
+# ── Ensure the agentflow directory is importable ───────────────────────────────
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
@@ -52,10 +52,10 @@ logging.basicConfig(
 logger = logging.getLogger("eval_baseline")
 
 
-# ── HTTP 客户端初始化 ──────────────────────────────────────────────────────────
+# ── HTTP client initialization ─────────────────────────────────────────────────
 
 def _init_http_client(concurrency: int = 256) -> None:
-    """初始化 slime http_utils 的全局 AsyncClient（训练框架会自动做，eval 需手动触发）。"""
+    """Initialize the global AsyncClient for slime http_utils (the training framework does this automatically; eval must trigger it manually)."""
     if _http_utils._http_client is None:
         _http_utils._http_client = httpx.AsyncClient(
             limits=httpx.Limits(max_connections=concurrency),
@@ -63,7 +63,7 @@ def _init_http_client(concurrency: int = 256) -> None:
         )
 
 
-# ── SGLang 服务器管理 ──────────────────────────────────────────────────────────
+# ── SGLang server management ───────────────────────────────────────────────────
 
 def _wait_for_server(url: str, timeout: int = 300, interval: int = 5) -> bool:
     deadline = time.time() + timeout
@@ -89,17 +89,17 @@ class SGLangServer:
             "--context-length", str(ctx_len),
             "--trust-remote-code",
         ]
-        logger.info("启动 SGLang 服务 (port=%d)", port)
+        logger.info("Starting SGLang server (port=%d)", port)
         self._proc = subprocess.Popen(cmd)
 
     def wait_ready(self, timeout: int = 300) -> bool:
         url = f"http://127.0.0.1:{self.port}/health"
-        logger.info("等待 port=%d 就绪（最多 %ds）…", self.port, timeout)
+        logger.info("Waiting for port=%d to be ready (up to %ds)…", self.port, timeout)
         ok = _wait_for_server(url, timeout=timeout)
         if ok:
-            logger.info("port=%d 已就绪。", self.port)
+            logger.info("port=%d is ready.", self.port)
         else:
-            logger.error("port=%d 启动超时。", self.port)
+            logger.error("port=%d timed out during startup.", self.port)
         return ok
 
     def stop(self):
@@ -111,11 +111,11 @@ class SGLangServer:
                 self._proc.kill()
 
 
-# ── 数据加载 ──────────────────────────────────────────────────────────────────
+# ── Data loading ───────────────────────────────────────────────────────────────
 
 def load_dataset(path: str, input_key: str = "prompt",
                  label_key: str = "label") -> list[dict]:
-    """从 JSONL 文件加载 {question, label} 列表，支持 chat messages 格式。"""
+    """Load a list of {question, label} dicts from a JSONL file; supports chat messages format."""
     samples = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -136,10 +136,10 @@ def load_dataset(path: str, input_key: str = "prompt",
     return samples
 
 
-# ── 答案提取 ───────────────────────────────────────────────────────────────────
+# ── Answer extraction ──────────────────────────────────────────────────────────
 
 def _extract_pred(text: str) -> str:
-    """优先提取 \\boxed{...}，否则返回末行截断。"""
+    """Extract \\boxed{...} if present; otherwise return the last line (truncated)."""
     boxed = last_boxed_only_string(text)
     if boxed:
         return normalize_final_answer(remove_boxed(boxed))
@@ -147,7 +147,7 @@ def _extract_pred(text: str) -> str:
     return lines[-1][:200] if lines else ""
 
 
-# ── 单条样本评估 ───────────────────────────────────────────────────────────────
+# ── Single-sample evaluation ───────────────────────────────────────────────────
 
 async def _eval_one(
     engine: SGLangEngine,
@@ -162,7 +162,7 @@ async def _eval_one(
     total: int,
 ) -> dict:
     async with semaphore:
-        # 构造消息
+        # Build messages
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -172,7 +172,7 @@ async def _eval_one(
             out = await engine.generate(messages, sampling_params=sampling_params)
             response = out.response
         except Exception as exc:
-            logger.warning("[%d/%d] generate 异常: %s", idx + 1, total, exc)
+            logger.warning("[%d/%d] generate error: %s", idx + 1, total, exc)
             return {
                 "idx": idx, "question": question, "label": label,
                 "pred": "", "response": "", "score": 0.0, "error": str(exc),
@@ -180,7 +180,7 @@ async def _eval_one(
 
         pred = _extract_pred(response)
 
-        # 快速路径：pred 与 label 字符串完全匹配直接给 1 分
+        # Fast path: exact string match between pred and label → score 1.0
         if pred and label and pred == label:
             score = 1.0
         else:
@@ -191,7 +191,7 @@ async def _eval_one(
                     groundtruth=label,
                 )
             except Exception as exc:
-                logger.warning("[%d/%d] rewarder 异常: %s", idx + 1, total, exc)
+                logger.warning("[%d/%d] rewarder error: %s", idx + 1, total, exc)
                 score = 0.0
 
         logger.info(
@@ -208,7 +208,7 @@ async def _eval_one(
         }
 
 
-# ── 批量评估主协程 ─────────────────────────────────────────────────────────────
+# ── Batch evaluation coroutine ─────────────────────────────────────────────────
 
 async def run_eval(
     samples: list[dict],
@@ -251,66 +251,66 @@ async def run_eval(
     return sorted(results, key=lambda r: r["idx"])
 
 
-# ── CLI 参数解析 ───────────────────────────────────────────────────────────────
+# ── CLI argument parsing ────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Baseline 评估（单轮 QA，不使用 AgentFlow）",
+        description="Baseline evaluation (single-turn QA, without AgentFlow)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    # 模型 / tokenizer
-    g = p.add_argument_group("模型配置")
-    g.add_argument("--model",     default=None, help="HF 模型路径（--start-server 时必填）")
-    g.add_argument("--tokenizer", default=None, help="HF tokenizer 路径（默认同 --model）")
+    # Model / tokenizer
+    g = p.add_argument_group("Model configuration")
+    g.add_argument("--model",     default=None, help="HF model path (required when using --start-server)")
+    g.add_argument("--tokenizer", default=None, help="HF tokenizer path (defaults to --model)")
 
-    # 服务器连接
-    g = p.add_argument_group("服务器连接（服务已在运行时使用）")
+    # Server connection
+    g = p.add_argument_group("Server connection (when the server is already running)")
     g.add_argument("--model-url",    default="http://127.0.0.1:30000/generate",
-                   help="模型推理 SGLang URL")
+                   help="SGLang URL for model inference")
     g.add_argument("--rewarder-url", default="http://127.0.0.1:30000/generate",
-                   help="Rewarder 使用的 SGLang URL（默认与模型共用同一服务器）")
+                   help="SGLang URL for the rewarder (defaults to sharing the same server as the model)")
 
-    # 自动拉起服务器
-    g = p.add_argument_group("自动拉起 SGLang 服务器")
+    # Auto-launch server
+    g = p.add_argument_group("Auto-launch SGLang server")
     g.add_argument("--start-server", action="store_true",
-                   help="自动拉起 SGLang 服务器（需要 --model）")
+                   help="Auto-launch an SGLang server (requires --model)")
     g.add_argument("--port",         type=int,   default=30000)
     g.add_argument("--tp",           type=int,   default=4)
     g.add_argument("--mem-fraction", type=float, default=0.7)
     g.add_argument("--ctx-len",      type=int,   default=65536)
 
-    # 评估数据
-    g = p.add_argument_group("评估数据")
+    # Evaluation data
+    g = p.add_argument_group("Evaluation data")
     g.add_argument("--eval-data",   nargs="+", metavar="NAME_OR_PATH",
-                   help="数据集列表，格式：名称 路径 [名称 路径 ...]")
+                   help="Dataset list in the format: name path [name path ...]")
     g.add_argument("--input-key",   default="prompt")
     g.add_argument("--label-key",   default="label")
     g.add_argument("--num-samples", type=int, default=None,
-                   help="每个数据集最多取多少条（调试用）")
+                   help="Maximum number of samples per dataset (for debugging)")
 
-    # 采样参数
-    g = p.add_argument_group("采样参数")
+    # Sampling parameters
+    g = p.add_argument_group("Sampling parameters")
     g.add_argument("--temperature",    type=float, default=0.0)
     g.add_argument("--top-p",          type=float, default=0.95)
     g.add_argument("--max-new-tokens", type=int,   default=4096)
     g.add_argument("--system-prompt",  type=str,   default=None,
-                   help="可选 system prompt；不填则无 system 消息")
+                   help="Optional system prompt; omit to send no system message")
 
-    # 推理控制
-    g = p.add_argument_group("推理控制")
+    # Inference control
+    g = p.add_argument_group("Inference control")
     g.add_argument("--concurrency", type=int, default=32,
-                   help="并发评估的最大协程数")
+                   help="Maximum number of concurrent evaluation coroutines")
 
-    # 输出
-    g = p.add_argument_group("输出")
+    # Output
+    g = p.add_argument_group("Output")
     g.add_argument("--output",  default="baseline_results.json")
     g.add_argument("--verbose", action="store_true")
 
     return p.parse_args()
 
 
-# ── 入口 ───────────────────────────────────────────────────────────────────────
+# ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
     args = parse_args()
@@ -321,43 +321,43 @@ def main() -> None:
     # ── Tokenizer ─────────────────────────────────────────────────────────────
     tokenizer_path = args.tokenizer or args.model
     if not tokenizer_path:
-        logger.error("请提供 --tokenizer 或 --model 参数。")
+        logger.error("Please provide --tokenizer or --model.")
         sys.exit(1)
     from transformers import AutoTokenizer
-    logger.info("加载 tokenizer：%s", tokenizer_path)
+    logger.info("Loading tokenizer: %s", tokenizer_path)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
 
-    # ── 数据集 ─────────────────────────────────────────────────────────────────
+    # ── Dataset ─────────────────────────────────────────────────────────────────
     if not args.eval_data or len(args.eval_data) % 2 != 0:
-        logger.error("--eval-data 需要以「名称 路径」为一组的偶数个参数，例如：\n"
+        logger.error("--eval-data requires an even number of arguments as name-path pairs, e.g.:\n"
                      "  --eval-data aime /data/aime-2024/aime-2024.jsonl")
         sys.exit(1)
 
     datasets: dict[str, list[dict]] = {}
     it = iter(args.eval_data)
     for name, path in zip(it, it):
-        logger.info("加载数据集 '%s'：%s", name, path)
+        logger.info("Loading dataset '%s': %s", name, path)
         samples = load_dataset(path, args.input_key, args.label_key)
         if args.num_samples:
             samples = samples[: args.num_samples]
         datasets[name] = samples
-        logger.info("  → %d 条样本", len(samples))
+        logger.info("  → %d samples", len(samples))
 
-    # ── 服务器 ─────────────────────────────────────────────────────────────────
+    # ── Server ─────────────────────────────────────────────────────────────────
     server = None
     model_url    = args.model_url
     rewarder_url = args.rewarder_url
 
     if args.start_server:
         if not args.model:
-            logger.error("--start-server 需要同时指定 --model。")
+            logger.error("--start-server requires --model to be specified.")
             sys.exit(1)
         server = SGLangServer(
             args.model, args.port, args.tp,
             args.mem_fraction, args.ctx_len,
         )
         if not server.wait_ready(timeout=300):
-            logger.error("SGLang 服务器启动失败，中止评估。")
+            logger.error("SGLang server failed to start; aborting evaluation.")
             server.stop()
             sys.exit(1)
         model_url    = f"http://127.0.0.1:{args.port}/generate"
@@ -369,12 +369,12 @@ def main() -> None:
         "max_new_tokens": args.max_new_tokens,
     }
 
-    # ── 评估循环 ───────────────────────────────────────────────────────────────
+    # ── Evaluation loop ─────────────────────────────────────────────────────────
     all_results: dict[str, dict] = {}
     try:
         for dataset_name, samples in datasets.items():
             logger.info(
-                "开始评估 '%s'（%d 条，concurrency=%d）…",
+                "Starting evaluation of '%s' (%d samples, concurrency=%d)…",
                 dataset_name, len(samples), args.concurrency,
             )
             t0 = time.time()
@@ -396,7 +396,7 @@ def main() -> None:
             accuracy = sum(scores) / len(scores) if scores else 0.0
 
             logger.info(
-                "数据集 '%s'：accuracy=%.3f（%d/%d）耗时 %.1fs",
+                "Dataset '%s': accuracy=%.3f (%d/%d) elapsed %.1fs",
                 dataset_name, accuracy, int(sum(scores)), len(scores), elapsed,
             )
 
@@ -412,15 +412,15 @@ def main() -> None:
         if server:
             server.stop()
 
-    # ── 保存结果 ───────────────────────────────────────────────────────────────
+    # ── Save results ────────────────────────────────────────────────────────────
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(all_results, indent=2, ensure_ascii=False))
-    logger.info("结果已保存至：%s", output_path)
+    logger.info("Results saved to: %s", output_path)
 
-    # ── 打印汇总 ───────────────────────────────────────────────────────────────
+    # ── Print summary ───────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("Baseline 评估结果汇总")
+    print("Baseline Evaluation Results Summary")
     print("=" * 60)
     for name, res in all_results.items():
         print(

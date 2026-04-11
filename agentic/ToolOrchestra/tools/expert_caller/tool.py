@@ -48,13 +48,13 @@ logger = logging.getLogger(__name__)
 
 # expert_engine_map: model_name -> {"url": str, "context_length": int}
 # context_length must match --context-length used when launching the expert SGLang server.
-# GPU assignment (see launch.sh, B300 × 8 卡):
-#   GPU 0  → Qwen3-32B-FP8                port 30001  (与检索服务、Math-7B 共享)
-#   GPU 0  → Qwen2.5-Math-7B              port 30003  (与检索服务、FP8 共享)
+# GPU assignment (see launch.sh, B300 × 8 GPUs):
+#   GPU 0  → Qwen3-32B-FP8                port 30001  (shared with retrieval service and Math-7B)
+#   GPU 0  → Qwen2.5-Math-7B              port 30003  (shared with retrieval service and FP8)
 #   GPU 1  → DeepSeek-R1-Distill-Qwen-32B port 30005  (mem ~0.45)
-#   GPU 1  → Qwen3-30B-A3B                port 30006  (mem ~0.45, 与 distill 共享)
+#   GPU 1  → Qwen3-30B-A3B                port 30006  (mem ~0.45, shared with distill)
 #   GPU 2  → Qwen2.5-Coder-32B            port 30002  (mem ~0.45)
-#   GPU 2  → Qwen3-14B                    port 30007  (mem ~0.45, 与 coder 共享)
+#   GPU 2  → Qwen3-14B                    port 30007  (mem ~0.45, shared with coder)
 #   GPU 3  → Qwen2.5-Math-72B             port 30004
 EXPERT_ENGINE_MAP: dict[str, dict] = {
     "Qwen/Qwen3-32B":                           {"url": "http://127.0.0.1:30001/v1", "context_length": 163840},

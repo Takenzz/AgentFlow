@@ -1,20 +1,20 @@
 """
-eval_ruler_general.py — RULER 合成任务评测脚本（slime-agentic 版）
-=================================================================
-与 /data/MemAgent/taskutils/memory_eval/ruler_general.py 核心思想、
-数据格式、评测指标完全对齐，推理侧使用 rollout.py 的提示词
-（\\boxed{} 格式，与训练一致）。
+eval_ruler_general.py — RULER synthetic task evaluation script (slime-agentic version)
+=======================================================================================
+Fully aligned in core logic, data format, and evaluation metrics with
+/data/MemAgent/taskutils/memory_eval/ruler_general.py.
+Inference uses the prompts from rollout.py (\\boxed{} format, consistent with training).
 
-评测数据：MemAgent 格式的 eval_{split}_{length}.json
-    字段：input（问题）、outputs（期望答案列表）、context（文档文本）
+Evaluation data: MemAgent-format eval_{split}_{length}.json
+    Fields: input (question), outputs (list of expected answers), context (document text)
 
-任务列表及指标：
+Task list and metrics:
     - niah_single_{1-3}, niah_multikey_{1-3},
       niah_multivalue, niah_multiquery,
-      vt, fwe              → sub_EM（所有期望串均在预测中出现的比例）
-    - qa_1, qa_2           → F1 / EM / sub_EM（标准 QA 指标）
+      vt, fwe              -> sub_EM (fraction of expected strings present in prediction)
+    - qa_1, qa_2           -> F1 / EM / sub_EM (standard QA metrics)
 
-用法：
+Usage:
     python eval_ruler_general.py \\
         --split  niah_single_1 \\
         --length 131072 \\
@@ -24,7 +24,7 @@ eval_ruler_general.py — RULER 合成任务评测脚本（slime-agentic 版）
         --save-dir results/ruler_general \\
         --save-file my_model
 
-环境变量（与 run_memagent_7b.sh 保持一致）：
+Environment variables (consistent with run_memagent_7b.sh):
     SERVE_HOST / SERVE_PORT / MEM_CHUNK_TOKENS / MEM_MAX_MEMORY
     MEM_MAX_FINAL / MEM_MAX_CHUNKS / MEM_MAX_CTX_TOKENS / DATAROOT
 """
@@ -45,7 +45,7 @@ import aiohttp
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-# ── 环境变量 ─────────────────────────────────────────────────────────────────
+# ── Environment variables ─────────────────────────────────────────────────────
 SERVE_HOST      = os.getenv("SERVE_HOST",        "127.0.0.1")
 SERVE_PORT      = os.getenv("SERVE_PORT",        "8000")
 CHUNK_TOKENS    = int(os.getenv("MEM_CHUNK_TOKENS", "5000"))
@@ -57,11 +57,11 @@ BASE_URL        = f"http://{SERVE_HOST}:{SERVE_PORT}/v1"
 API_KEY         = os.getenv("SERVE_API_KEY", "EMPTY")
 DATAROOT        = os.getenv("DATAROOT", "/data/ruler")
 
-# QA 任务需要拼装上下文的外部数据文件（路径可通过环境变量覆盖）
+# External data files needed to assemble context for QA tasks (paths overridable via env vars)
 SQUAD_PATH    = os.getenv("SQUAD_PATH",    "")   # qa_1
 HOTPOTQA_PATH = os.getenv("HOTPOTQA_PATH", "")   # qa_2
 
-# 所有支持的 RULER 任务及其指标类型
+# All supported RULER tasks and their metric types
 RULER_TASKS = {
     "niah_single_1":  "sub_em",
     "niah_single_2":  "sub_em",
@@ -77,7 +77,7 @@ RULER_TASKS = {
     "qa_2":           "qa",
 }
 
-# ── 提示词模板（与 rollout.py 完全一致）──────────────────────────────────────
+# ── Prompt templates (fully aligned with rollout.py) ─────────────────────────
 _MEMORY_TEMPLATE = """You are presented with a problem, a section of an article that may contain the answer to the problem, and a previous memory. Please read the provided section carefully and update the memory with the new information that helps to answer the problem. Be sure to retain all relevant details from the previous memory while adding any new, useful information.
 
 <problem>
@@ -112,7 +112,7 @@ _NO_MEMORY = "No previous memory"
 _STOP_TOKEN_STRINGS = ["<|im_end|>", "<|endoftext|>"]
 
 
-# ── 答案提取（与 rollout.py 一致）─────────────────────────────────────────────
+# ── Answer extraction (consistent with rollout.py) ───────────────────────────
 
 def _strip_stop_tokens(text: str) -> str:
     for tok in _STOP_TOKEN_STRINGS:
@@ -159,11 +159,11 @@ def _extract_boxed(text: str) -> str:
         return ""
 
 
-# ── 评测指标 ──────────────────────────────────────────────────────────────────
+# ── Evaluation metrics ────────────────────────────────────────────────────────
 
 def _string_match_all(pred: str, refs: list[str]) -> float:
-    """RULER 非 QA 任务指标：所有期望串都在 pred 中出现的比例。
-    与 ruler_general.py string_match_all 完全一致。"""
+    """RULER non-QA task metric: fraction of expected strings present in pred.
+    Fully aligned with string_match_all in ruler_general.py."""
     if not refs:
         return 0.0
     return sum(1.0 if r.lower() in pred.lower() else 0.0 for r in refs) / len(refs)
@@ -212,7 +212,7 @@ def _sub_exact_match(prediction: str, ground_truth: str) -> float:
 
 
 def _score_item(pred: str, outputs: list[str], metric_type: str) -> dict:
-    """计算单条样本的分数，返回 dict 供写入 JSONL。"""
+    """Compute score for a single sample; returns a dict for writing to JSONL."""
     if metric_type == "qa":
         gold = outputs[0] if outputs else ""
         f1, _, _ = _f1_score(pred, gold)
@@ -241,7 +241,7 @@ def _agg_metrics(records: list[dict], metric_type: str) -> dict:
     return result
 
 
-# ── HTTP 工具 ────────────────────────────────────────────────────────────────
+# ── HTTP utilities ───────────────────────────────────────────────────────────
 
 async def _chat_once(
     session: aiohttp.ClientSession,
@@ -270,7 +270,7 @@ async def _chat_once(
     return data["choices"][0]["message"]["content"]
 
 
-# ── 推理逻辑 ─────────────────────────────────────────────────────────────────
+# ── Inference logic ──────────────────────────────────────────────────────────
 
 async def _recurrent_infer(
     item: dict,
@@ -353,7 +353,7 @@ async def _openai_infer(
     return response.strip()
 
 
-# ── 主评测流程 ────────────────────────────────────────────────────────────────
+# ── Main evaluation pipeline ─────────────────────────────────────────────────
 
 async def run_eval(
     data: list[dict],
@@ -484,12 +484,13 @@ def _print_existing_stats(out_path: Path, metric_type: str) -> None:
             print(f"  {k}: {round(stats[k] * 100, 2)}")
 
 
-# ── 数据加载 ──────────────────────────────────────────────────────────────────
+# ── Data loading ─────────────────────────────────────────────────────────────
 
 def _assemble_qa_context(items: list[dict], split: str, data_root: str) -> list[dict]:
     """
-    qa_1 / qa_2 任务的 context 字段是文档索引列表，需要从外部文件拼装。
-    与 ruler_general.py 的 set_context 逻辑一致。
+    The context field for qa_1 / qa_2 tasks is a list of document indices
+    that must be assembled from external files.
+    Consistent with the set_context logic in ruler_general.py.
     """
     doc_prompt = "Document {i}:\n{document}"
 
@@ -524,7 +525,7 @@ def _assemble_qa_context(items: list[dict], split: str, data_root: str) -> list[
 
 
 def load_data(data_root: str, split: str, length: int) -> tuple[list[dict], str]:
-    """返回 (data, metric_type)。"""
+    """Returns (data, metric_type)."""
     data_path = Path(data_root) / f"eval_{split}_{length}.json"
     if not data_path.exists():
         raise FileNotFoundError(
@@ -542,7 +543,7 @@ def load_data(data_root: str, split: str, length: int) -> tuple[list[dict], str]
     for idx, item in enumerate(raw):
         item = dict(item)
         item.setdefault("_id", idx)
-        # 确保 outputs 是 list
+        # Ensure outputs is a list
         if "outputs" not in item and "answers" in item:
             item["outputs"] = item.pop("answers")
         if isinstance(item.get("outputs"), str):
@@ -551,14 +552,14 @@ def load_data(data_root: str, split: str, length: int) -> tuple[list[dict], str]
 
     metric_type = RULER_TASKS.get(split, "sub_em")
 
-    # QA 任务需要拼装上下文
+    # QA tasks require context to be assembled
     if metric_type == "qa" and data and isinstance(data[0].get("context"), list):
         data = _assemble_qa_context(data, split, data_root)
 
     return data, metric_type
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(

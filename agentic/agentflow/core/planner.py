@@ -1,13 +1,10 @@
 import importlib.util
-import json
 import logging
-import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 from .llm_engine import SGLangEngine, GenerationOutput
-from .formatters import QueryAnalysis
 from .memory import Memory
 
 logger = logging.getLogger(__name__)
@@ -26,16 +23,16 @@ class Planner:
 
     @staticmethod
     def _preload_tools_base(tools_path: Path):
-        """将 tools/base.py 以固定名称 'tools.base' 注册到 sys.modules，
-        使各 tool.py 中 `from tools.base import ...` 能够直接命中缓存，
-        不依赖 sys.path 的顺序或环境差异。"""
+        """Register tools/base.py under the fixed name 'tools.base' in sys.modules,
+        so that `from tools.base import ...` in each tool.py hits the cache directly,
+        independent of sys.path ordering or environment differences."""
         import types as _types
 
         base_file = tools_path / "base.py"
         if not base_file.exists() or "tools.base" in sys.modules:
             return
 
-        # 注册虚拟父包 'tools'（如果尚未存在）
+        # Register the virtual parent package 'tools' (if it doesn't already exist)
         if "tools" not in sys.modules:
             tools_pkg = _types.ModuleType("tools")
             tools_pkg.__path__ = [str(tools_path)]
@@ -50,12 +47,12 @@ class Planner:
 
     @staticmethod
     def _discover_tools(tools_dir: str):
-        """扫描 tools 目录，加载每个子目录下 tool.py 中的 TOOL_NAME 和 TOOL_DESCRIPTION。"""
+        """Scan the tools directory and load TOOL_NAME and TOOL_DESCRIPTION from tool.py in each subdirectory."""
         available_tools = []
         toolbox_metadata = {}
 
         tools_path = Path(tools_dir)
-        # 预先把 tools.base 注册进 sys.modules，让 tool.py 的导入稳定命中
+        # Pre-register tools.base in sys.modules so that imports in tool.py reliably hit the cache
         Planner._preload_tools_base(tools_path)
 
         for tool_file in sorted(tools_path.rglob("tool.py")):
@@ -66,7 +63,7 @@ class Planner:
             try:
                 spec.loader.exec_module(module)
             except Exception as e:
-                logger.warning("[Planner] 跳过 %s，加载失败: %s", tool_file, e)
+                logger.warning("[Planner] Skipping %s, failed to load: %s", tool_file, e)
                 continue
 
             tool_name = getattr(module, "TOOL_NAME", None)
@@ -110,7 +107,7 @@ Instructions:
         step_count: int,
         max_step_count: int,
     ) -> str:
-        """构建 next_step 轮次的 user 消息内容（供 generate_next_step 与 get_next_step_prompt_text 复用）。"""
+        """Build the user message content for the next_step turn (shared by generate_next_step and get_next_step_prompt_text)."""
         return f"""
 Task: Determine the optimal next step to address the query using available tools and previous steps.
 Context:
@@ -139,23 +136,6 @@ Rules:
 - The response must end with the Context, Sub-Goal, and Tool Name sections in that order, with no extra content.
 
 """
-
-    def get_next_step_prompt_text(
-        self,
-        query: str,
-        query_analysis: str,
-        memory: Memory,
-        step_count: int,
-        max_step_count: int,
-    ) -> str:
-        """返回 next_step 轮次发送给模型的完整 prompt 文本（含 chat template），用于 tokenize 以构造 loss_mask。"""
-        content = self._build_next_step_content(query, query_analysis, memory, step_count, max_step_count)
-        messages = [{"role": "user", "content": content}]
-        return self.llm_engine.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
 
 
 

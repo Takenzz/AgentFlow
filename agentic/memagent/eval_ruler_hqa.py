@@ -1,17 +1,17 @@
 """
-eval_ruler_hqa.py — MemAgent HotpotQA 评测脚本（slime-agentic 版）
-================================================================
-与 /data/MemAgent/taskutils/memory_eval/ruler_hqa.py 核心思想、
-数据格式、评测指标完全对齐，但推理侧使用 rollout.py 的提示词
-（\\boxed{} 格式，与训练保持一致）。
+eval_ruler_hqa.py — MemAgent HotpotQA evaluation script (slime-agentic version)
+================================================================================
+Fully aligned in core logic, data format, and evaluation metrics with
+/data/MemAgent/taskutils/memory_eval/ruler_hqa.py.
+Inference uses the prompts from rollout.py (\\boxed{} format, consistent with training).
 
-评测数据：MemAgent 格式的 eval_{length}.json
-    字段：input, answers, context, num_docs
+Evaluation data: MemAgent-format eval_{length}.json
+    Fields: input, answers, context, num_docs
 
-评测指标：F1、EM（精确匹配）、sub_EM（子串匹配）
+Evaluation metrics: F1, EM (exact match), sub_EM (substring match)
 
-用法：
-    # 先启动 SGLang 服务（例如通过 MemAgent 的 serve/llm070.py）
+Usage:
+    # Start the SGLang server first (e.g. via MemAgent's serve/llm070.py)
     python eval_ruler_hqa.py \\
         --model  Qwen2.5-7B-Instruct \\
         --tokenizer /path/to/tokenizer \\
@@ -20,14 +20,14 @@ eval_ruler_hqa.py — MemAgent HotpotQA 评测脚本（slime-agentic 版）
         --save-dir results/ruler_hqa_200 \\
         --save-file my_model
 
-环境变量（与 run_memagent_7b.sh 保持一致）：
-    SERVE_HOST        SGLang 服务主机       (default: 127.0.0.1)
-    SERVE_PORT        SGLang 服务端口       (default: 8000)
-    MEM_CHUNK_TOKENS  每 chunk 的 token 数  (default: 5000)
-    MEM_MAX_MEMORY    记忆更新最大生成 token  (default: 1024)
-    MEM_MAX_FINAL     最终回答最大生成 token  (default: 256)
-    MEM_MAX_CHUNKS    最多处理的 chunk 数    (default: 512)
-    DATAROOT          eval_*.json 所在目录   (default: /data/hotpotqa)
+Environment variables (consistent with run_memagent_7b.sh):
+    SERVE_HOST        SGLang server host         (default: 127.0.0.1)
+    SERVE_PORT        SGLang server port          (default: 8000)
+    MEM_CHUNK_TOKENS  tokens per chunk            (default: 5000)
+    MEM_MAX_MEMORY    max tokens for memory update (default: 1024)
+    MEM_MAX_FINAL     max tokens for final answer  (default: 256)
+    MEM_MAX_CHUNKS    max number of chunks         (default: 512)
+    DATAROOT          directory with eval_*.json   (default: /data/hotpotqa)
 """
 
 from __future__ import annotations
@@ -46,20 +46,20 @@ import aiohttp
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-# ── 环境变量（与 rollout.py / run_memagent_7b.sh 保持一致）─────────────────
+# ── Environment variables (consistent with rollout.py / run_memagent_7b.sh) ──
 SERVE_HOST      = os.getenv("SERVE_HOST",        "127.0.0.1")
 SERVE_PORT      = os.getenv("SERVE_PORT",        "8000")
 CHUNK_TOKENS    = int(os.getenv("MEM_CHUNK_TOKENS", "5000"))
 MAX_MEMORY_TOKS = int(os.getenv("MEM_MAX_MEMORY",   "1024"))
 MAX_FINAL_TOKS  = int(os.getenv("MEM_MAX_FINAL",    "256"))
 MAX_CHUNKS      = int(os.getenv("MEM_MAX_CHUNKS",   "512"))
-# 超过此 token 数的上下文做对称截断（默认不截断）
+# Contexts exceeding this token count are symmetrically truncated (no truncation by default)
 MAX_CTX_TOKENS  = int(os.getenv("MEM_MAX_CTX_TOKENS", str(10 ** 12)))
 BASE_URL        = f"http://{SERVE_HOST}:{SERVE_PORT}/v1"
 API_KEY         = os.getenv("SERVE_API_KEY", "EMPTY")
 DATAROOT        = os.getenv("DATAROOT", "/data/hotpotqa")
 
-# ── 提示词模板（与 rollout.py 完全一致）──────────────────────────────────────
+# ── Prompt templates (fully aligned with rollout.py) ─────────────────────────
 _MEMORY_TEMPLATE = """You are presented with a problem, a section of an article that may contain the answer to the problem, and a previous memory. Please read the provided section carefully and update the memory with the new information that helps to answer the problem. Be sure to retain all relevant details from the previous memory while adding any new, useful information.
 
 <problem>
@@ -94,7 +94,7 @@ _NO_MEMORY = "No previous memory"
 _STOP_TOKEN_STRINGS = ["<|im_end|>", "<|endoftext|>"]
 
 
-# ── 答案提取（与 rollout.py 一致：\\boxed{} 格式）────────────────────────────
+# ── Answer extraction (consistent with rollout.py: \\boxed{} format) ──────────
 
 def _strip_stop_tokens(text: str) -> str:
     for tok in _STOP_TOKEN_STRINGS:
@@ -141,7 +141,7 @@ def _extract_boxed(text: str) -> str:
         return ""
 
 
-# ── 评测指标（与 ruler_hqa.py 完全对齐：F1 / EM / sub_EM）───────────────────
+# ── Evaluation metrics (fully aligned with ruler_hqa.py: F1 / EM / sub_EM) ───
 
 def _normalize_answer(s: str) -> str:
     def remove_articles(t):
@@ -173,7 +173,7 @@ def _f1_score(prediction: str, ground_truth: str) -> tuple[float, float, float]:
 
 
 def _exact_match(prediction: str, ground_truth: str) -> float:
-    # yes/no/noanswer 的特殊处理，与 ruler_hqa.py 原版一致
+    # Special handling for yes/no/noanswer, consistent with the original ruler_hqa.py
     p = _normalize_answer(prediction)
     g = _normalize_answer(ground_truth)
     if p in ("yes", "no", "noanswer") and p != g:
@@ -190,7 +190,7 @@ def _sub_exact_match(prediction: str, ground_truth: str) -> float:
 
 
 def _agg_metrics(records: list[dict]) -> dict:
-    """聚合 per-sample 分数，与 ruler_hqa.py calc_metrics 语义一致。"""
+    """Aggregate per-sample scores; semantically consistent with calc_metrics in ruler_hqa.py."""
     keys = ("judge_f1", "judge_em", "judge_sub_em")
     totals = {k: 0.0 for k in keys}
     n = len(records)
@@ -205,7 +205,7 @@ def _agg_metrics(records: list[dict]) -> dict:
     }
 
 
-# ── HTTP 工具 ────────────────────────────────────────────────────────────────
+# ── HTTP utilities ───────────────────────────────────────────────────────────
 
 async def _chat_once(
     session: aiohttp.ClientSession,
@@ -234,7 +234,7 @@ async def _chat_once(
     return data["choices"][0]["message"]["content"]
 
 
-# ── 推理逻辑 ─────────────────────────────────────────────────────────────────
+# ── Inference logic ──────────────────────────────────────────────────────────
 
 async def _recurrent_infer(
     item: dict,
@@ -245,8 +245,8 @@ async def _recurrent_infer(
     sem: asyncio.Semaphore,
 ) -> str:
     """
-    chunk-by-chunk 记忆更新 + \\boxed{} 最终作答。
-    提示词与 rollout.py 完全一致，确保评测和训练行为对齐。
+    Chunk-by-chunk memory update + \\boxed{} final answer.
+    Prompts are fully aligned with rollout.py to ensure eval/training behavior consistency.
     """
     question = item["input"].strip()
     context  = item["context"].strip()
@@ -262,7 +262,7 @@ async def _recurrent_infer(
     ][:MAX_CHUNKS]
 
     async with sem:
-        # 每个 item 独享一个 session，避免 aiohttp 连接复用问题
+        # Each item gets its own session to avoid aiohttp connection reuse issues
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=86400)
         ) as session:
@@ -299,8 +299,8 @@ async def _openai_infer(
     sem: asyncio.Semaphore,
 ) -> str:
     """
-    直接长上下文生成（对应 MemAgent openai 模式的对照组）。
-    同样要求模型用 \\boxed{} 格式回答，与训练一致。
+    Direct long-context generation (baseline corresponding to MemAgent openai mode).
+    Also requires the model to answer in \\boxed{} format, consistent with training.
     """
     question = item["input"].strip()
     context  = item["context"].strip()
@@ -326,13 +326,13 @@ async def _openai_infer(
     return response.strip()
 
 
-# ── 主评测流程 ────────────────────────────────────────────────────────────────
+# ── Main evaluation pipeline ─────────────────────────────────────────────────
 
 async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> None:
     out_path = Path(args.save_dir) / f"{args.save_file}.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 断点续评：跳过已写入的 _id
+    # Resume from checkpoint: skip already-written _ids
     cached_ids: set[int] = set()
     if out_path.exists() and not args.force:
         with open(out_path, encoding="utf-8") as f:
@@ -384,7 +384,7 @@ async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> Non
             "judge_sub_em": _sub_exact_match(pred, gold),
             "response":     response,
         }
-        # 保留非 context 的原始字段
+        # Preserve original fields other than context
         for k, v in item.items():
             if k not in ("context", "response") and k not in result:
                 result[k] = v
@@ -398,7 +398,7 @@ async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> Non
     fout = open(out_path, "a", encoding="utf-8")
     pbar = tqdm(total=len(tasks), desc=f"ruler_hqa[{args.length}]", dynamic_ncols=True)
 
-    PRINT_INTERVAL = 10   # 每 N 条打印一次中间分数
+    PRINT_INTERVAL = 10   # print intermediate score every N samples
 
     for coro in asyncio.as_completed(tasks):
         result = await coro
@@ -412,7 +412,7 @@ async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> Non
         fout.flush()
         records.append(result)
 
-        # 实时滚动指标显示在进度条后缀
+        # Display rolling metrics in the progress bar suffix in real time
         n = len(records)
         rolling_f1     = sum(r["judge_f1"]     for r in records) / n
         rolling_sub_em = sum(r["judge_sub_em"] for r in records) / n
@@ -426,7 +426,7 @@ async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> Non
             first_shown = True
             _print_sample(result)
 
-        # 每 PRINT_INTERVAL 条打印一次中间汇总
+        # Print interim summary every PRINT_INTERVAL samples
         if n % PRINT_INTERVAL == 0:
             tqdm.write(
                 f"[interim {n}/{len(tasks)}]  "
@@ -438,7 +438,7 @@ async def run_eval(data: list[dict], args: argparse.Namespace, tokenizer) -> Non
     pbar.close()
     fout.close()
 
-    # 聚合统计
+    # Aggregate statistics
     all_records = records[:]
     if cached_ids:
         with open(out_path, encoding="utf-8") as f:
@@ -477,15 +477,15 @@ def _print_existing_stats(out_path: Path) -> None:
         print(f"  {k}: {round(stats[k] * 100, 2)}")
 
 
-# ── 数据加载 ──────────────────────────────────────────────────────────────────
+# ── Data loading ─────────────────────────────────────────────────────────────
 
 def load_data(data_root: str, length: int) -> list[dict]:
     """
-    同时支持两种数据格式：
-      1. MemAgent 原始格式 eval_{length}.json（input / answers / context）
-      2. slime JSONL 格式（由 prepare_data.py 生成，prompt / label / metadata）
+    Supports two data formats simultaneously:
+      1. MemAgent original format eval_{length}.json (input / answers / context)
+      2. slime JSONL format (generated by prepare_data.py: prompt / label / metadata)
     """
-    # 优先找 JSON，其次 JSONL
+    # Prefer JSON, fall back to JSONL
     candidates = [
         Path(data_root) / f"eval_{length}.json",
         Path(data_root) / f"eval_{length}.jsonl",
@@ -510,12 +510,12 @@ def load_data(data_root: str, length: int) -> list[dict]:
     data = []
     for idx, item in enumerate(raw):
         if "input" in item:
-            # MemAgent 原始格式
+            # MemAgent original format
             item = dict(item)
             item.setdefault("_id", idx)
             data.append(item)
         elif "prompt" in item:
-            # slime JSONL 格式
+            # slime JSONL format
             meta = item.get("metadata") or {}
             data.append({
                 "_id":      idx,
@@ -530,7 +530,7 @@ def load_data(data_root: str, length: int) -> list[dict]:
     return data
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(

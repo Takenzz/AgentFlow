@@ -329,7 +329,7 @@ def retrieve_endpoint(request: QueryRequest):
     if not request.topk:
         request.topk = config.retrieval_topk  # fallback to default
 
-    # Perform batch retrieval (加锁防止 FAISS GPU 并发冲突)
+    # Perform batch retrieval (lock to prevent FAISS GPU concurrency conflicts)
     with _retrieval_lock:
         results, scores = retriever.batch_search(
             query_list=request.queries,

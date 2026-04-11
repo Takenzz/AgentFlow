@@ -1,24 +1,24 @@
 """
-run_eval.py — MemAgent 评测总入口（slime-agentic 版）
-====================================================
-对标 /data/MemAgent/taskutils/memory_eval/run.py，
-管理模型配置、启动评测任务。
+run_eval.py — MemAgent evaluation main entry point (slime-agentic version)
+==========================================================================
+Mirrors /data/MemAgent/taskutils/memory_eval/run.py;
+manages model configuration and launches evaluation tasks.
 
-不负责启动 SGLang 服务——请在调用本脚本前手动启动，
-或使用 MemAgent 的 serve/llm070.py：
+Does NOT start the SGLang server — start it manually before calling this script,
+or use MemAgent's serve/llm070.py:
     python /data/MemAgent/serve/llm070.py --model <ckpt> --tp <n>
 
-用法（评测单个模型）：
+Usage (evaluate a single model):
     python run_eval.py \\
         --ckpt /data/MemAgent_Qwen25-7B-RL/global_step_500 \\
         --name my_7b \\
         --tasks hqa \\
         --data-root /data/hotpotqa
 
-用法（评测所有预设模型）：
+Usage (evaluate all preset models):
     python run_eval.py --run-all
 
-环境变量：
+Environment variables:
     SERVE_PORT / SERVE_HOST / DATAROOT / RULER_DATAROOT
     MEM_CHUNK_TOKENS / MEM_MAX_MEMORY / MEM_MAX_FINAL / MEM_MAX_CHUNKS
 """
@@ -32,7 +32,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# ── 常量（与 ruler_hqa.py / ruler_general.py 对齐）──────────────────────────
+# ── Constants (aligned with ruler_hqa.py / ruler_general.py) ────────────────
 RULER_HQA_LENGTHS      = [50, 100, 200, 400, 800, 1600, 3200, 6400]
 RULER_HQA_LENGTHS_OVER1M = [12800, 25600]
 
@@ -49,22 +49,22 @@ SCRIPT_DIR = Path(__file__).parent
 
 @dataclass
 class ModelConfig:
-    """单个模型的评测配置，对应 MemAgent run.py 的 Config 类。"""
+    """Evaluation configuration for a single model, corresponding to the Config class in MemAgent run.py."""
     name: str
-    ckpt: str                        # HuggingFace 路径或本地目录
+    ckpt: str                        # HuggingFace path or local directory
     api: str  = "recurrent"          # recurrent | openai
     n_proc: int = 256
     temperature: float = 0.7
     top_p: float = 0.95
-    max_input_len: int = 120000      # openai 模式专用
-    max_output_len: int = 10000      # openai 模式专用
-    # 是否额外跑 >1M 的超长测试（仅对 MemoryAgent 模型有意义）
+    max_input_len: int = 120000      # openai mode only
+    max_output_len: int = 10000      # openai mode only
+    # Whether to also run >1M ultra-long tests (only meaningful for MemoryAgent models)
     include_over1m: bool = False
     extra_env: dict[str, str] = field(default_factory=dict)
 
     @property
     def model_name(self) -> str:
-        """服务器中注册的模型名称（SGLang 用目录名作为 model id）。"""
+        """Model name registered in the server (SGLang uses the directory name as model id)."""
         p = Path(self.ckpt)
         return p.name if p.is_dir() else self.ckpt
 
@@ -120,7 +120,7 @@ class ModelConfig:
         script = str(SCRIPT_DIR / "eval_ruler_general.py")
         for split in splits:
             for length in lengths:
-                # ruler_general.py 原版也跳过了 qa_1 在 262144 以上的长度
+                # The original ruler_general.py also skips qa_1 for lengths above 262144
                 if split == "qa_1" and length > 262144:
                     continue
                 cmd = [
@@ -150,9 +150,9 @@ def _run(cmd: list[str], extra_env: dict[str, str]) -> None:
         print(f"[warn] command exited with code {p.returncode}")
 
 
-# ── 预设模型配置（对标 MemAgent run.py 的 CONFIGS）────────────────────────────
-# 在这里添加你训练完的 checkpoint 或对照基线。
-# extra_env 中可以覆盖 MEM_CHUNK_TOKENS 等超参。
+# ── Preset model configurations (mirroring CONFIGS in MemAgent run.py) ───────
+# Add your trained checkpoints or baseline models here.
+# Hyperparameters such as MEM_CHUNK_TOKENS can be overridden via extra_env.
 
 RECURRENT_ENV = {
     "MEM_CHUNK_TOKENS": "5000",
@@ -162,7 +162,7 @@ RECURRENT_ENV = {
 }
 
 PRESET_CONFIGS: list[ModelConfig] = [
-    # ── 训练结果（替换 ckpt 路径） ──────────────────────────────────────────
+    # ── Training results (replace ckpt path) ────────────────────────────────
     ModelConfig(
         name="MemAgent-7B-slime",
         ckpt="/data/MemAgent_Qwen25-7B-RL/global_step_latest",
@@ -171,7 +171,7 @@ PRESET_CONFIGS: list[ModelConfig] = [
         include_over1m=True,
         extra_env=RECURRENT_ENV,
     ),
-    # ── 对照基线：官方 MemoryAgent ──────────────────────────────────────────
+    # ── Baseline: official MemoryAgent ──────────────────────────────────────
     ModelConfig(
         name="MemoryAgent-7B-official",
         ckpt="BytedTsinghua-SIA/RL-MemoryAgent-7B",
@@ -180,7 +180,7 @@ PRESET_CONFIGS: list[ModelConfig] = [
         include_over1m=True,
         extra_env=RECURRENT_ENV,
     ),
-    # ── 对照基线：直接长上下文生成 ──────────────────────────────────────────
+    # ── Baseline: direct long-context generation ─────────────────────────────
     ModelConfig(
         name="Qwen25-7B-1M-openai",
         ckpt="Qwen/Qwen2.5-7B-Instruct-1M",
@@ -198,7 +198,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="MemAgent evaluation runner — slime-agentic version"
     )
-    # 单模型快速评测
+    # Quick evaluation for a single model
     parser.add_argument("--ckpt",      default=None, help="Checkpoint path or HF model id")
     parser.add_argument("--name",      default=None, help="Run name for output files")
     parser.add_argument("--api",       default="recurrent", choices=["recurrent", "openai"])
@@ -206,7 +206,7 @@ def main() -> None:
     parser.add_argument("--over1m",    action="store_true",
                         help="Also run 12800/25600-doc tests")
 
-    # 任务选择
+    # Task selection
     parser.add_argument(
         "--tasks", nargs="+", default=["hqa"],
         choices=["hqa", "general", "all"],
@@ -224,7 +224,7 @@ def main() -> None:
         "--general-lengths", nargs="+", type=int, default=None,
     )
 
-    # 路径
+    # Paths
     parser.add_argument("--data-root",         default=os.getenv("DATAROOT", "/data/hotpotqa"),
                         help="Directory with eval_{length}.json (HQA)")
     parser.add_argument("--ruler-data-root",   default=os.getenv("RULER_DATAROOT", "/data/ruler"),

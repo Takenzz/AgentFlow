@@ -1,7 +1,7 @@
 """
-将 MemAgent 的 hotpotqa parquet 数据转换为 slime 兼容的 JSONL 格式。
+Convert MemAgent hotpotqa parquet data to slime-compatible JSONL format.
 
-MemAgent parquet 字段：
+MemAgent parquet fields:
     prompt        : [{"role": "user", "content": question}]
     context       : "Document 1:\n...\n\nDocument 2:\n..."
     reward_model  : {"style": "rule", "ground_truth": ["answer1", ...]}
@@ -9,22 +9,22 @@ MemAgent parquet 字段：
     data_source   : "hotpotqa"
     ability       : "memory"
 
-输出 JSONL 字段（slime 约定）：
+Output JSONL fields (slime convention):
     prompt    : question string            (--input-key prompt)
     label     : first answer string        (--label-key label)
     metadata  : {
-        "context"      : 长文档文本,
-        "ground_truth" : [所有可接受答案],  # reward_func 多答案匹配用
+        "context"      : long document text,
+        "ground_truth" : [all acceptable answers],  # used by reward_func for multi-answer matching
         "num_docs"     : int,
         "data_source"  : str,
     }
 
-用法：
+Usage:
     python prepare_data.py \\
         --input  /path/to/hotpotqa_train.parquet \\
         --output /path/to/hotpotqa_train.jsonl
 
-    # 也可以直接从 HuggingFace 拉取
+    # Can also pull directly from HuggingFace
     python prepare_data.py \\
         --hf-dataset BytedTsinghua-SIA/hotpotqa \\
         --hf-split  train \\
@@ -40,17 +40,17 @@ from pathlib import Path
 
 
 def convert_row(row: dict) -> dict | None:
-    """将 MemAgent 的一行转换为 slime JSONL 格式。
+    """Convert one row from MemAgent format to slime JSONL format.
 
-    兼容两种格式：
-      训练集格式（parquet）: prompt(list) / reward_model / extra_info / context
-      评估集格式（eval_*.json）: input / answers / num_docs / context
+    Compatible with two formats:
+      Training set format (parquet): prompt(list) / reward_model / extra_info / context
+      Evaluation set format (eval_*.json): input / answers / num_docs / context
     """
     context = row.get("context", "")
     if not context:
         return None
 
-    # ── 评估集格式：input + answers ──────────────────────────────────────────
+    # ── Evaluation set format: input + answers ───────────────────────────────
     if "input" in row:
         question = row["input"]
         answers = row.get("answers", [])
@@ -70,7 +70,7 @@ def convert_row(row: dict) -> dict | None:
             },
         }
 
-    # ── 训练集格式：prompt(list) + reward_model ──────────────────────────────
+    # ── Training set format: prompt(list) + reward_model ────────────────────
     prompt_field = row.get("prompt", [])
     if isinstance(prompt_field, list) and prompt_field:
         question = prompt_field[0].get("content", "") if isinstance(prompt_field[0], dict) else str(prompt_field[0])
@@ -128,17 +128,17 @@ def convert_hf(dataset_name: str, split: str, output_path: str) -> int:
         print("ERROR: datasets is required. pip install datasets", file=sys.stderr)
         sys.exit(1)
 
-    # 优先使用环境变量 HF_ENDPOINT，其次自动尝试镜像
+    # Prefer the HF_ENDPOINT environment variable; otherwise automatically try the mirror
     import os
     if not os.environ.get("HF_ENDPOINT"):
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
-    # 用 HfFileSystem 精确列出目标 split 的文件，避免多 split 格式不一致的推断错误
+    # Use HfFileSystem to precisely list files for the target split, avoiding inference errors from inconsistent multi-split formats
     from huggingface_hub import HfFileSystem, list_repo_files
     fs = HfFileSystem()
     exts = (".parquet", ".json", ".jsonl", ".csv")
 
-    # list_repo_files 比 glob 更可靠，能列出所有文件
+    # list_repo_files is more reliable than glob and lists all files
     all_files = list(list_repo_files(dataset_name, repo_type="dataset"))
     split_files = [
         f"hf://datasets/{dataset_name}/{p}"
@@ -149,7 +149,7 @@ def convert_hf(dataset_name: str, split: str, output_path: str) -> int:
         fmt = "parquet" if split_files[0].endswith(".parquet") else "json"
         ds = load_dataset(fmt, data_files={split: split_files}, split=split)
     else:
-        # 最后回退：可能 split 名藏在目录里（如 data/split/xxx.parquet）
+        # Last fallback: the split name may be nested inside a directory (e.g. data/split/xxx.parquet)
         split_files = [
             f"hf://datasets/{dataset_name}/{p}"
             for p in all_files
@@ -184,7 +184,7 @@ def _write_jsonl(rows: list[dict], output_path: str) -> int:
 
 
 def convert_hf_file(dataset_name: str, filename: str, output_path: str) -> int:
-    """直接下载 HF repo 中的指定文件并转换，用于 eval_*.json 等非标准 split 文件。"""
+    """Directly download and convert a specified file from an HF repo; used for non-standard split files such as eval_*.json."""
     import os
     if not os.environ.get("HF_ENDPOINT"):
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
@@ -215,7 +215,7 @@ def main():
     group.add_argument("--hf-dataset", help="HuggingFace dataset name, e.g. BytedTsinghua-SIA/hotpotqa")
     parser.add_argument("--hf-split",  default="train", help="HF split (default: train)")
     parser.add_argument("--hf-file",   default=None,
-                        help="直接指定 HF repo 中的文件名，如 eval_1600.json（用于非标准 split）")
+                        help="Directly specify a filename in the HF repo, e.g. eval_1600.json (for non-standard splits)")
     parser.add_argument("--output",    required=True, help="Output JSONL file path")
     args = parser.parse_args()
 

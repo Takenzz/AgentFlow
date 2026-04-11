@@ -1,10 +1,11 @@
 """
-MemAgent custom_convert — 多轮轨迹展开
-======================================
-直接复用 agentflow 的实现：
-  - 将每条 sample 的 turns 展开为独立训练序列
-  - 奖励按轮次数均摊（reward / T_i），对应论文的 J_Flow-GRPO 目标
-  - 按 global_batch_size 截断保证整除
+MemAgent custom_convert — multi-turn trajectory unrolling
+=========================================================
+Directly reuses the agentflow implementation:
+  - Unrolls each sample's turns into independent training sequences
+  - Rewards are evenly distributed across turns (reward / T_i), corresponding to
+    the J_Flow-GRPO objective in the paper
+  - Truncated to a multiple of global_batch_size to ensure divisibility
 """
 
 from agentflow.custom_convert import custom_convert  # noqa: F401

@@ -1,10 +1,10 @@
 """
 ToolOrchestra rollout.py
 ------------------------
-符合 slime 框架约定的 generate / reward_func 入口。
+generate / reward_func entry points conforming to the slime framework convention.
 
-    generate()   — 从 sample 解包数据，创建 OrchestraSolver，调用 solve()
-    reward_func  — 从 reward.py re-export，供 slime 通过 --custom-rm-path 加载
+    generate()   — unpacks data from sample, creates OrchestraSolver, calls solve()
+    reward_func  — re-exported from reward.py; loaded by slime via --custom-rm-path
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from slime.utils.types import Sample
 from agentflow.core.llm_engine import SGLangEngine
 from orchestra_solver import OrchestraSolver
 from tools.expert_caller.tool import EXPERT_ENGINE_MAP
-from reward import reward_func  # noqa: F401  slime 通过 rollout.reward_func 加载
+from reward import reward_func  # noqa: F401  slime loads this via rollout.reward_func
 
 RETRIEVAL_URL = "http://127.0.0.1:8000/retrieve"
-# 单条 sample rollout 超时（秒），防止长尾 straggler 拖慢整个 batch
+# Per-sample rollout timeout (seconds) to prevent long-tail stragglers from stalling the whole batch
 ROLLOUT_SAMPLE_TIMEOUT = 360
 
 
@@ -33,11 +33,11 @@ async def generate(
     evaluation: bool = False,
 ) -> Sample:
     """
-    slime 框架调用入口（每条 sample 调用一次）。
+    slime framework entry point (called once per sample).
 
-    sample.prompt   — 问题文本（--input-key problem）
-    sample.label    — ground truth（--label-key answer）
-    sample.metadata — 其余字段，由 data loader 从 JSONL 的 "metadata" 字段填充，包含：
+    sample.prompt   — question text (--input-key problem)
+    sample.label    — ground truth (--label-key answer)
+    sample.metadata — remaining fields populated by the data loader from the JSONL "metadata" field:
                           category / tools / model_mapping / eid / pref_vec / tool_pricing
     """
     state = GenerateState(args)

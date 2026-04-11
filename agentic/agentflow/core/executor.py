@@ -33,11 +33,11 @@ class Executor:
         tools_engine_map: dict[str, Any] | None = None,
     ):
         self.llm_engine = llm_engine
-        # key 可以是 TOOL_NAME（外部名）、class_name 或 dir_name，找不到则 fallback 到 llm_engine
+        # key can be TOOL_NAME (external name), class_name, or dir_name; falls back to llm_engine if not found
         self.tools_engine_map: dict[str, Any] = tools_engine_map or {}
         self.available_tools = available_tools
 
-    def extract_explanation_and_command(self, response: Any) -> tuple[str, str, str]:
+    def _extract_command(self, response: Any) -> str:
         def normalize_code(code: str) -> str:
             normalized = code.strip()
             normalized = re.sub(r"<\|im_end\|>\s*$", "", normalized).strip()
@@ -47,32 +47,12 @@ class Executor:
             normalized = re.sub(r"^\([^)]*pid=\d+[^)]*\)\s*", "", normalized)
             return normalized.strip()
 
-        analysis = "No analysis found."
-        explanation = "No explanation found."
-        command = "No command found."
-
         if hasattr(response, "response"):
             response = response.response
 
+        command = "No command found."
         if isinstance(response, str):
             text = response.strip()
-
-            analysis_match = re.search(
-                r"Analysis:(.*?)Command Explanation",
-                text,
-                re.DOTALL | re.IGNORECASE,
-            )
-            if analysis_match:
-                analysis = analysis_match.group(1).strip()
-
-            explanation_match = re.search(
-                r"Command Explanation:(.*?)Generated Command",
-                text,
-                re.DOTALL | re.IGNORECASE,
-            )
-            if explanation_match:
-                explanation = explanation_match.group(1).strip()
-
             command_match = re.search(
                 r"Generated Command:.*?```python\s*\n(.*?)```",
                 text,
@@ -99,12 +79,11 @@ class Executor:
         else:
             command = "Invalid response type."
 
-        command = normalize_code(command)
-        return analysis, explanation, command
+        return normalize_code(command)
 
-    async def generate_tool_command(self,query: str,context: str,sub_goal: str,tool_name: str,tool_metadata: dict,step_count: int) -> str:
+    async def generate_tool_command(self, query: str, context: str, sub_goal: str, tool_name: str, tool_metadata: dict, step_count: int) -> str:
         prompt_generate_tool_command = f"""
-        Task: Generate a precise command to execute the selected tool.
+Task: Generate a precise command to execute the selected tool.
 
 Context:
 - **Query:** {query}
@@ -145,7 +124,7 @@ execution = tool.execute(query=\"\"\"Find the number of intersections of y = 4*g
 """
         messages = [{"role": "user", "content": prompt_generate_tool_command}]
         tool_cmd_out = await self.llm_engine.generate(messages)
-        analysis, explanation, command = self.extract_explanation_and_command(tool_cmd_out.response)
+        command = self._extract_command(tool_cmd_out.response)
         return command, tool_cmd_out
 
     def _parse_command_kwargs(self, command: str) -> dict:

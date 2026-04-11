@@ -103,8 +103,8 @@ def eval_log(rollout_id, args, data, extra_metrics) -> bool:
 
 async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], evaluation: bool = False) -> Sample:
     """
-    符合 Slime 框架要求的异步 AgentFlow 生成函数。
-    流程：原始问题 → Planner.plan() → sample
+    Async AgentFlow generation function compliant with the Slime framework.
+    Pipeline: original question -> Planner.plan() -> sample
     """
     assert not getattr(args, "partial_rollout", False), "Partial rollout is not supported for AgentFlow generation at the moment."
 
@@ -140,7 +140,7 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
             "verifier":      generate_engine,
             "base_generator": generate_engine,
             "python_coder":  coder_engine,
-            "final_output":  generate_engine,  # 固定用 base 模型生成答案，不参与训练
+            "final_output":  generate_engine,  # Always use the base model to generate the answer; excluded from training
         }
         solver = Solver(engine_map=engine_map, tools_dir=str(TOOLS_DIR), trajectory_dir=str(TRAJECTORY_DIR) if TRAJECTORY_DIR else None)
         label = str(sample.label) if sample.label is not None else None
@@ -208,10 +208,10 @@ def _extract_final_answer(response: str) -> str:
 
 async def reward_func(args: Any, sample: Sample, **kwargs) -> dict:
     """
-    使用 Rewarder.compute_reward（LLM 裁判）对比模型答案与 ground truth。
-    使用保存在 metadata 中的原始题目，而非被 solver 覆盖后的 prompt。
-    Rewarder 使用固定的 generate_engine（端口 30000），而非训练中的 planner 引擎，
-    以保证 reward 信号在 RL 训练过程中保持稳定。
+    Uses Rewarder.compute_reward (LLM judge) to compare the model answer against the ground truth.
+    Uses the original question stored in metadata rather than the prompt overwritten by the solver.
+    The Rewarder uses the fixed generate_engine (port 30000) instead of the training planner engine,
+    ensuring the reward signal remains stable throughout RL training.
     """
     state = GenerateState(args)
     engine = SGLangEngine(

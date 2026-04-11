@@ -1,15 +1,15 @@
 """
 Search Retrieval Tool
 ---------------------
-调用本地 FAISS 检索服务（retrieval_general_thought.py）检索相关文档。
+Calls the local FAISS retrieval service (retrieval_general_thought.py) to retrieve relevant documents.
 
-检索服务接口：
+Retrieval service API:
     POST http://127.0.0.1:8000/retrieve
     {
-        "queries": ["查询文本"],
+        "queries": ["query text"],
         "topk": 5,
         "return_scores": true,
-        "eid": "样本id"   # 用于过滤只返回该样本相关的文档
+        "eid": "sample_id"   # used to filter and return only documents relevant to this sample
     }
 """
 
@@ -37,8 +37,8 @@ TOOL_DEMO_COMMANDS = {
 
 class SearchRetrievalTool:
     """
-    对接本地 FAISS 检索服务的工具。
-    每个样本实例化一次，携带该样本的 eid（用于文档过滤）。
+    Tool that interfaces with the local FAISS retrieval service.
+    Instantiated once per sample, carrying that sample's eid (used for document filtering).
     """
 
     def __init__(
@@ -51,11 +51,11 @@ class SearchRetrievalTool:
     ):
         """
         Args:
-            retrieval_url:      FAISS 检索服务地址
-            eid:                样本 id，用于检索服务内部的文档过滤
-            topk:               返回的最大文档数
-            max_content_length: 每篇文档截断的最大字符数
-            timeout:            HTTP 请求超时秒数
+            retrieval_url:      Address of the FAISS retrieval service
+            eid:                Sample ID used for document filtering inside the retrieval service
+            topk:               Maximum number of documents to return
+            max_content_length: Maximum characters to include from each document
+            timeout:            HTTP request timeout in seconds
         """
         self.retrieval_url = retrieval_url
         self.eid = eid
@@ -64,7 +64,7 @@ class SearchRetrievalTool:
         self.timeout = timeout
 
     def _format_results(self, results: list) -> str:
-        """将检索结果列表格式化为可读字符串。"""
+        """Format a list of retrieval results into a human-readable string."""
         if not results:
             return "No relevant documents found."
 
@@ -81,13 +81,13 @@ class SearchRetrievalTool:
 
     async def execute(self, query: str) -> str:
         """
-        检索与 query 相关的文档，返回格式化的文档字符串。
+        Retrieve documents relevant to the query and return a formatted string.
 
         Args:
-            query: 检索查询文本
+            query: The retrieval query text
 
         Returns:
-            格式化的检索结果字符串；出错时返回错误描述（不抛异常）。
+            Formatted retrieval results string; on error returns an error description without raising.
         """
         payload = {
             "queries": [query],
@@ -116,7 +116,7 @@ class SearchRetrievalTool:
         except Exception as e:
             return f"[SearchRetrievalTool Error] {type(e).__name__}: {e}"
 
-        # data 是 [[{document, score}, ...]] 结构
+        # data has the structure [[{document, score}, ...]]
         if not isinstance(data, list) or not data:
             return "No relevant documents found."
 
