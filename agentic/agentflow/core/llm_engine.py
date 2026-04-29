@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from slime.utils.http_utils import post
+from openai import AsyncOpenAI
 
 
 @dataclass
@@ -77,4 +78,91 @@ class SGLangEngine:
             finish_reason=finish_reason,
         )
 
+
+class APIEngine(SGLangEngine):
+    """使用 OpenAI 兼容 Chat Completions API 模拟 SGLang 推理引擎。
+
+    用于评测或非训练链路：调用第三方 / 自建的 OpenAI 兼容 API，拿到 response 文本即可。
+    由于 API 不返回逐 token 的 logprob，也与本地 tokenizer 的 token 边界不保证一致，
+    因此其输出 **不参与训练 loss**：
+        - prompt_text / prompt_token_ids: 仍然用本地 tokenizer 渲染，保持与 SGLangEngine 一致，
+          方便上层 Solver / 日志统一处理；
+        - response: 从 API 返回的 message.content 取得；
+        - token_ids / log_probs: 置为空列表（不参与 loss）；
+        - finish_reason: 透传 API 返回的 finish_reason（若无则为空字符串）。
+    """
+
+    def __init__(
+        self,
+        url: str,
+        tokenizer: Any,
+        sampling_params: dict,
+        max_new_tokens: int | None = None,
+        enable_thinking: bool = False,
+        api_key: str | None = None,
+        model_name: str | None = None,
+    ):
+        super().__init__(url, tokenizer, sampling_params, max_new_tokens, enable_thinking)
+        self.api_key = api_key
+        self.model_name = model_name
+        # 复用项目其它模块（eval_orchestra / expert_caller 等）的调用风格：
+        # 用 AsyncOpenAI 作为底层异步 HTTP 客户端，支持 OpenAI 兼容的第三方 / 自建服务。
+        self.client = AsyncOpenAI(
+            api_key=api_key or "EMPTY",
+            base_url=url,
+            timeout=180.0,
+        )
+
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        sampling_params: dict | None = None,
+    ) -> GenerationOutput:
+        """调用 OpenAI 兼容 /chat/completions 接口，返回与 SGLangEngine 同构的 GenerationOutput。
+
+        只有 prompt_text / prompt_token_ids / response 三个字段有效；
+        token_ids / log_probs 置空，finish_reason 透传 API 返回值。
+        """
+        params = dict(sampling_params if sampling_params is not None else self.sampling_params)
+
+        # 1) 仍然在本地用 tokenizer 渲染 prompt_text / prompt_token_ids，保持和 SGLangEngine 一致。
+        prompt_text = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=self.enable_thinking,
+        )
+        prompt_token_ids = self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
+
+        # 2) 把 SGLang 风格的 sampling_params 映射到 OpenAI chat completions 字段。
+        kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+        }
+        if "temperature" in params:
+            kwargs["temperature"] = params["temperature"]
+        if "top_p" in params:
+            kwargs["top_p"] = params["top_p"]
+        if "max_new_tokens" in params:
+            kwargs["max_tokens"] = params["max_new_tokens"]
+        elif "max_tokens" in params:
+            kwargs["max_tokens"] = params["max_tokens"]
+        if "stop" in params:
+            kwargs["stop"] = params["stop"]
+
+        # 3) 用 AsyncOpenAI 异步发起请求；完全不会阻塞事件循环。
+        completion = await self.client.chat.completions.create(**kwargs)
+
+        choice = completion.choices[0]
+        response = (choice.message.content or "") if choice.message is not None else ""
+        finish_reason = choice.finish_reason or ""
+
+        return GenerationOutput(
+            prompt_text=prompt_text,
+            prompt_token_ids=prompt_token_ids,
+            response=response,
+            token_ids=[],
+            log_probs=[],
+            finish_reason=finish_reason,
+        )
 

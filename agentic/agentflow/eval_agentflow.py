@@ -1,16 +1,44 @@
 #!/usr/bin/env python3
 """
-AgentFlow standalone evaluation script
-Forward inference only; no training logic. Directly reuses the Solver / Rewarder pipeline.
+AgentFlow 独立评测脚本。
 
-Typical usage (server already running):
+角色（在 AgentFlow 整体流程中的位置）：
+    与 `rollout.py` 对照：rollout.py 是训练闭环的一环（slime trainer 每步调用
+    `generate` → 计算 reward → 触发 GRPO 更新）；本脚本则是**纯前向评测**——直接
+    复用 `Solver` / `Rewarder` 那一套 pipeline，不经过 slime，不跑 GRPO 更新、
+    不做参数回传，只关心在某个 checkpoint 下模型的准确率。
+
+入口函数：
+    - `main()`：CLI 入口。解析参数 → 加载 tokenizer / 数据 → （可选）拉起 SGLang
+      服务 → 调用 `run_eval`。
+    - `run_eval(...)`：构造 planner / executor / coder 三个固定 engine、初始化
+      `Solver` + `Rewarder`，用 `asyncio.Semaphore` 控制并发，对每条样本调用
+      `_eval_one`。
+    - `_eval_one(...)`：单条样本的评测——`Solver.solve` 跑一条完整多轮轨迹，取
+      `final_output` 抽出 pred，先走字符串精确匹配快路径，否则落到 Rewarder 做
+      LLM judge 打分。
+
+输出给下游的是什么：
+    - 标准输出：按数据集打印准确率、正确数 / 总数、耗时的汇总表。
+    - `--output`（默认 `eval_results.json`）：完整结果 JSON，包括每条样本的
+      question / label / pred / final_output / score / 错误信息等，便于查 case。
+    - `--trajectory-dir`（可选）：把 Solver 的完整轨迹 dump 出来，用于调试。
+
+Checkpoint 加载（Megatron → HF）：
+    本脚本接收的 `--model` 必须是 **HuggingFace 格式**的模型路径（SGLang 需要 HF
+    格式）。训练过程中 slime 保存的是 **Megatron ckpt**，需要先用
+    `convert_agentflow_to_hf.sh` 把 Megatron ckpt 转成 HF 格式，再把转换后的目录传
+    给 `--model`（或 `--tokenizer`）。三路 engine（planner / executor / coder）
+    会各自启动一个 SGLang 服务加载同一份 HF ckpt。
+
+典型用法（server 已启动）：
     python eval_agentflow.py \\
         --tokenizer /data/model/qwen25_7b/ \\
         --eval-data aime /data/aime-2024/aime-2024.jsonl \\
         --output eval_results.json \\
         --concurrency 16
 
-Typical usage (auto-launch SGLang server):
+典型用法（自动拉起 SGLang）：
     python eval_agentflow.py \\
         --model /data/AgentFlow_pro-Qwen25-7B-RL/ \\
         --start-servers --tp 4 \\
@@ -37,7 +65,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from core.llm_engine import SGLangEngine     # noqa: E402
+from core.llm_engine import SGLangEngine, APIEngine  # noqa: E402
 from core.solver import Solver               # noqa: E402
 from core.rewarder import Rewarder           # noqa: E402
 from slime.rollout.rm_hub.math_dapo_utils import (   # noqa: E402
@@ -49,9 +77,10 @@ import slime.utils.http_utils as _http_utils  # noqa: E402
 
 
 def _init_http_client(concurrency: int = 256) -> None:
-    """Initialize the global AsyncClient for slime http_utils.
-    The training pipeline handles this via init_http_client(args); the eval script
-    bypasses the training framework and must call this once before any SGLang requests.
+    """初始化 slime.http_utils 的全局 AsyncClient。
+
+    训练流程中由 `init_http_client(args)` 自动完成；本评测脚本绕过了训练框架，
+    因此必须在发起任何 SGLang 请求前手动调用一次。
     """
     if _http_utils._http_client is None:
         _http_utils._http_client = httpx.AsyncClient(
@@ -73,7 +102,7 @@ TOOLS_DIR = _SCRIPT_DIR / "tools"
 # ── Data loading ─────────────────────────────────────────────────────────────
 
 def load_dataset(path: str, input_key: str = "prompt", label_key: str = "label") -> list[dict]:
-    """Load a {question, label} list from a JSONL file. Supports chat messages format for input_key."""
+    """从 JSONL 文件加载 `{question, label}` 列表。支持 input_key 为 chat messages 格式。"""
     samples = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -98,7 +127,7 @@ def load_dataset(path: str, input_key: str = "prompt", label_key: str = "label")
 # ── Answer extraction utilities ───────────────────────────────────────────────
 
 def _extract_pred(text: str) -> str:
-    """Extract the predicted answer from the response (prefer \\boxed{...}; otherwise return last line truncated)."""
+    """从 response 中抽取预测答案（优先 `\\boxed{...}`，否则取最后非空行并截断到 200 字）。"""
     boxed = last_boxed_only_string(text)
     if boxed:
         return normalize_final_answer(remove_boxed(boxed))
@@ -120,7 +149,7 @@ def _wait_for_server(url: str, timeout: int = 300, interval: int = 5) -> bool:
 
 
 class SGLangServer:
-    """Launch and manage a SGLang HTTP service in a subprocess."""
+    """在子进程中拉起并管理一个 SGLang HTTP 推理服务。"""
 
     def __init__(
         self,
@@ -243,24 +272,36 @@ async def run_eval(
     concurrency: int,
     max_steps: int,
     trajectory_dir: str | None,
+    use_api_for_non_planner: bool = False,
+    executor_api_key: str | None = None,
+    executor_model_name: str | None = None,
+    coder_api_key: str | None = None,
+    coder_model_name: str | None = None,
+    rewarder_api_key: str | None = None,
+    rewarder_model_name: str | None = None,
 ) -> list[dict]:
-    """Run Solver + Rewarder concurrently over all samples and return a list of results.
+    """并发地用 Solver + Rewarder 评测全部样本，返回结果列表。
 
-    The three engines are consistent with rollout.py:
+    三路 engine 与 rollout.py 保持一致：
       planner_engine  -> "planner" / "default"
-                         corresponds to rollout.py's engine (sglang_router)
+                         对应 rollout.py 里的 engine（sglang_router）
       executor_engine -> "executor" / "verifier" / "base_generator" / rewarder
-                         corresponds to rollout.py's generate_engine (hardcoded port 30000)
+                         对应 rollout.py 里的 generate_engine（固定 30000 端口）
       coder_engine    -> "python_coder"
-                         corresponds to rollout.py's coder_engine (hardcoded port 30001)
+                         对应 rollout.py 里的 coder_engine（固定 30001 端口）
+
+    当 ``use_api_for_non_planner=True`` 时，除 Planner 外的 engine
+    （executor / verifier / base_generator / python_coder / final_output / rewarder）
+    全部切换为 OpenAI 兼容的远程 API 调用（APIEngine），Planner 保持 SGLangEngine
+    以便评测被训练的模型本身。
     """
-    # Ensure the global HTTP client for slime http_utils is initialized
-    # (the training path does this via the framework; eval must trigger it manually)
+    # 确保 slime http_utils 的全局 AsyncClient 已经初始化
+    # （训练链路由框架代为初始化；eval 必须手动触发）
     _init_http_client(concurrency=concurrency * 4)
 
     max_new_tokens = sampling_params.get("max_new_tokens", 2048)
 
-    # Planner: main model, responsible for plan / next_step / final_output; thinking disabled
+    # Planner：主模型（被评测对象），始终走 SGLangEngine；关闭 thinking
     planner_engine = SGLangEngine(
         url=planner_url,
         tokenizer=tokenizer,
@@ -268,27 +309,57 @@ async def run_eval(
         max_new_tokens=max_new_tokens,
         enable_thinking=False,
     )
-    # Executor / base_generator: general-purpose generation engine
-    executor_engine = SGLangEngine(
-        url=executor_url,
-        tokenizer=tokenizer,
-        sampling_params=sampling_params,
-        max_new_tokens=max_new_tokens,
-    )
-    # Coder / python_coder: code generation engine
-    coder_engine = SGLangEngine(
-        url=coder_url,
-        tokenizer=tokenizer,
-        sampling_params=sampling_params,
-        max_new_tokens=max_new_tokens,
-    )
-    # Rewarder consistent with reward_func: uses generate_engine (corresponding to executor_url)
-    rewarder_engine = SGLangEngine(
-        url=executor_url,
-        tokenizer=tokenizer,
-        sampling_params={},
-        max_new_tokens=2048,
-    )
+
+    if use_api_for_non_planner:
+        # Executor / base_generator / verifier / final_output 全部走 API
+        executor_engine = APIEngine(
+            url=executor_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+            api_key=executor_api_key,
+            model_name=executor_model_name,
+        )
+        # Coder / python_coder 走 API（可选用独立 model / base_url）
+        coder_engine = APIEngine(
+            url=coder_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+            api_key=coder_api_key,
+            model_name=coder_model_name,
+        )
+        # Rewarder：LLM-as-judge，使用单独的 API 配置（默认复用 executor 的）
+        rewarder_engine = APIEngine(
+            url=executor_url,
+            tokenizer=tokenizer,
+            sampling_params={},
+            max_new_tokens=2048,
+            api_key=rewarder_api_key or executor_api_key,
+            model_name=rewarder_model_name or executor_model_name,
+        )
+    else:
+        # Executor / base_generator：通用生成引擎
+        executor_engine = SGLangEngine(
+            url=executor_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+        )
+        # Coder / python_coder：代码生成引擎
+        coder_engine = SGLangEngine(
+            url=coder_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+        )
+        # Rewarder 与 reward_func 保持一致：走 generate_engine（即 executor_url）
+        rewarder_engine = SGLangEngine(
+            url=executor_url,
+            tokenizer=tokenizer,
+            sampling_params={},
+            max_new_tokens=2048,
+        )
 
     engine_map = {
         "default":        planner_engine,
@@ -297,7 +368,7 @@ async def run_eval(
         "verifier":       executor_engine,
         "base_generator": executor_engine,
         "python_coder":   coder_engine,
-        "final_output":   executor_engine,  # Consistent with training: always use base model to generate the answer
+        "final_output":   executor_engine,  # 与训练保持一致：最终答案始终由 base 模型生成
     }
 
     solver = Solver(
@@ -320,7 +391,7 @@ async def run_eval(
         for i, s in enumerate(samples)
     ]
     results = await asyncio.gather(*tasks)
-    return sorted(results, key=lambda r: r["idx"])  # Preserve original order
+    return sorted(results, key=lambda r: r["idx"])  # 保留原始顺序
 
 
 # ── CLI argument parsing ───────────────────────────────────────────────────────
@@ -367,6 +438,35 @@ def parse_args() -> argparse.Namespace:
                           help="SGLang mem-fraction-static")
     auto_grp.add_argument("--ctx-len",    type=int, default=65536,
                           help="SGLang context length")
+
+    # OpenAI-compatible API for non-planner engines
+    api_grp = p.add_argument_group("API for non-planner engines")
+    api_grp.add_argument("--use-api-for-non-planner", action="store_true",
+                         help="Route executor / verifier / base_generator / "
+                              "python_coder / final_output / rewarder to an "
+                              "OpenAI-compatible API instead of SGLang.")
+    api_grp.add_argument("--executor-api-base", default=None,
+                         help="OpenAI-compatible base_url for executor/verifier/"
+                              "base_generator/final_output (e.g. https://api.openai.com/v1)")
+    api_grp.add_argument("--executor-api-key",  default=None,
+                         help="API key for executor API (env OPENAI_API_KEY "
+                              "fallback if not provided)")
+    api_grp.add_argument("--executor-model",    default=None,
+                         help="Model name served by the executor API, e.g. gpt-4o-mini")
+    api_grp.add_argument("--coder-api-base",    default=None,
+                         help="OpenAI-compatible base_url for python_coder "
+                              "(defaults to --executor-api-base)")
+    api_grp.add_argument("--coder-api-key",     default=None,
+                         help="API key for coder API (defaults to --executor-api-key)")
+    api_grp.add_argument("--coder-model",       default=None,
+                         help="Model name for coder API, e.g. gpt-4o-mini / deepseek-coder")
+    api_grp.add_argument("--rewarder-api-base", default=None,
+                         help="OpenAI-compatible base_url for reward judge "
+                              "(defaults to --executor-api-base)")
+    api_grp.add_argument("--rewarder-api-key",  default=None,
+                         help="API key for rewarder API (defaults to --executor-api-key)")
+    api_grp.add_argument("--rewarder-model",    default=None,
+                         help="Model name for reward judge (defaults to --executor-model)")
 
     # Evaluation data: --eval-data NAME PATH [NAME2 PATH2 ...]
     data_grp = p.add_argument_group("Evaluation data")
@@ -440,10 +540,29 @@ def main() -> None:
     #   planner_url  → sglang_router / primary model (planner / default)
     #   executor_url → generate_engine               (executor / base_generator)
     #   coder_url    → coder_engine                  (verifier / python_coder)
+    #
+    # 当 --use-api-for-non-planner 时，executor / coder 使用远程 API，
+    # 此处只需要启动 planner 一个 SGLang 服务即可。
     servers: list[SGLangServer] = []
     planner_url  = args.planner_url
     executor_url = args.executor_url
     coder_url    = args.coder_url
+
+    # 非 planner 走 API 时，把 executor_url / coder_url 覆盖为 API base_url
+    if args.use_api_for_non_planner:
+        if not args.executor_api_base:
+            logger.error("--use-api-for-non-planner requires --executor-api-base.")
+            sys.exit(1)
+        if not args.executor_model:
+            logger.error("--use-api-for-non-planner requires --executor-model.")
+            sys.exit(1)
+        executor_url = args.executor_api_base
+        coder_url    = args.coder_api_base or args.executor_api_base
+        logger.info("Non-planner engines will use OpenAI-compatible API:")
+        logger.info("  executor/verifier/base_gen/final_output -> %s (model=%s)",
+                    executor_url, args.executor_model)
+        logger.info("  python_coder                            -> %s (model=%s)",
+                    coder_url, args.coder_model or args.executor_model)
 
     if args.start_servers:
         if not args.model:
@@ -454,19 +573,24 @@ def main() -> None:
             args.model, args.planner_port, args.tp,
             args.mem_fraction, args.ctx_len,
         )
-        executor_srv = SGLangServer(
-            args.model, args.executor_port, args.tp,
-            args.mem_fraction, args.ctx_len,
-        )
-        coder_srv = SGLangServer(
-            args.model, args.coder_port, args.tp,
-            args.mem_fraction, args.ctx_len,
-        )
-        servers.extend([planner_srv, executor_srv, coder_srv])
+        servers.append(planner_srv)
+
+        # 仅在不使用 API 时才启动 executor / coder 的 SGLang 服务
+        if not args.use_api_for_non_planner:
+            executor_srv = SGLangServer(
+                args.model, args.executor_port, args.tp,
+                args.mem_fraction, args.ctx_len,
+            )
+            coder_srv = SGLangServer(
+                args.model, args.coder_port, args.tp,
+                args.mem_fraction, args.ctx_len,
+            )
+            servers.extend([executor_srv, coder_srv])
 
         planner_url  = f"http://127.0.0.1:{args.planner_port}/generate"
-        executor_url = f"http://127.0.0.1:{args.executor_port}/generate"
-        coder_url    = f"http://127.0.0.1:{args.coder_port}/generate"
+        if not args.use_api_for_non_planner:
+            executor_url = f"http://127.0.0.1:{args.executor_port}/generate"
+            coder_url    = f"http://127.0.0.1:{args.coder_port}/generate"
 
         for srv in servers:
             if not srv.wait_ready(timeout=300):
@@ -502,6 +626,13 @@ def main() -> None:
                     concurrency=args.concurrency,
                     max_steps=args.max_steps,
                     trajectory_dir=args.trajectory_dir,
+                    use_api_for_non_planner=args.use_api_for_non_planner,
+                    executor_api_key=args.executor_api_key,
+                    executor_model_name=args.executor_model,
+                    coder_api_key=args.coder_api_key or args.executor_api_key,
+                    coder_model_name=args.coder_model or args.executor_model,
+                    rewarder_api_key=args.rewarder_api_key or args.executor_api_key,
+                    rewarder_model_name=args.rewarder_model or args.executor_model,
                 )
             )
 

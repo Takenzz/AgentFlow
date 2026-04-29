@@ -46,7 +46,7 @@ MAX_STEPS=${MAX_STEPS:-5}
 # 采样参数（temperature=0 为贪心，推理时常用）
 TEMPERATURE=${TEMPERATURE:-0.7}
 TOP_P=${TOP_P:-0.95}
-MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-4096}
+MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-10000}
 
 # 调试：限制样本数（0 = 不限制）
 NUM_SAMPLES=${NUM_SAMPLES:-0}
@@ -61,6 +61,28 @@ CODER_PORT=${CODER_PORT:-30002}
 
 # 是否让脚本自动拉起 SGLang（设为 1 则自动拉起，否则需要手动提前启动）
 AUTO_START=${AUTO_START:-1}
+
+# ── 非 Planner 引擎走 OpenAI 兼容 API（推荐用于只评测 Planner 本身） ────────────
+# 置为 1 后：
+#   - executor / verifier / base_generator / final_output / rewarder 全部走 API
+#   - python_coder 也走 API
+#   - 本机只启动 1 个 SGLang（给 Planner 使用）
+USE_API_FOR_NON_PLANNER=${USE_API_FOR_NON_PLANNER:-0}
+
+# Executor / Verifier / base_generator / final_output 的 API 配置
+EXECUTOR_API_BASE=${EXECUTOR_API_BASE:-"https://api.openai.com/v1"}
+EXECUTOR_API_KEY=${EXECUTOR_API_KEY:-"${OPENAI_API_KEY:-}"}
+EXECUTOR_MODEL=${EXECUTOR_MODEL:-"gpt-4o-mini"}
+
+# Python Coder 的 API 配置（未设置时复用 EXECUTOR_* 的值）
+CODER_API_BASE=${CODER_API_BASE:-""}
+CODER_API_KEY=${CODER_API_KEY:-""}
+CODER_MODEL=${CODER_MODEL:-""}
+
+# Rewarder（LLM judge）的 API 配置（未设置时复用 EXECUTOR_* 的值）
+REWARDER_API_BASE=${REWARDER_API_BASE:-""}
+REWARDER_API_KEY=${REWARDER_API_KEY:-""}
+REWARDER_MODEL=${REWARDER_MODEL:-""}
 
 # ── 环境准备 ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +129,27 @@ fi
 
 if [ "${NUM_SAMPLES}" -gt 0 ] 2>/dev/null; then
     PY_ARGS+=(--num-samples "${NUM_SAMPLES}")
+fi
+
+# ── 非 Planner 引擎走 API 模式 ────────────────────────────────────────────────
+
+if [ "${USE_API_FOR_NON_PLANNER}" = "1" ]; then
+    if [ -z "${EXECUTOR_API_KEY}" ]; then
+        echo "❌ 启用 USE_API_FOR_NON_PLANNER=1 时必须提供 EXECUTOR_API_KEY（或环境变量 OPENAI_API_KEY）"
+        exit 1
+    fi
+    PY_ARGS+=(
+        --use-api-for-non-planner
+        --executor-api-base "${EXECUTOR_API_BASE}"
+        --executor-api-key  "${EXECUTOR_API_KEY}"
+        --executor-model    "${EXECUTOR_MODEL}"
+    )
+    [ -n "${CODER_API_BASE}" ] && PY_ARGS+=(--coder-api-base "${CODER_API_BASE}")
+    [ -n "${CODER_API_KEY}"  ] && PY_ARGS+=(--coder-api-key  "${CODER_API_KEY}")
+    [ -n "${CODER_MODEL}"    ] && PY_ARGS+=(--coder-model    "${CODER_MODEL}")
+    [ -n "${REWARDER_API_BASE}" ] && PY_ARGS+=(--rewarder-api-base "${REWARDER_API_BASE}")
+    [ -n "${REWARDER_API_KEY}"  ] && PY_ARGS+=(--rewarder-api-key  "${REWARDER_API_KEY}")
+    [ -n "${REWARDER_MODEL}"    ] && PY_ARGS+=(--rewarder-model    "${REWARDER_MODEL}")
 fi
 
 # ── 如果手动模式，提示用户先启动服务器 ────────────────────────────────────────

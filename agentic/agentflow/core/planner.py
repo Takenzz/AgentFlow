@@ -88,8 +88,10 @@ Inputs:
 Instructions:
 1. Identify the main objectives in the query.
 2. List the necessary skills and tools.
-3. For each skill and tool, explain how it helps address the query.
+3. For each skill and tool, briefly explain how it helps address the query.
 4. Note any additional considerations.
+
+Keep the entire response concise and under 700 words. Do NOT write tutorials or explain general concepts — focus only on what is specific to this query.
 
 """
 
