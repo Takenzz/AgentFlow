@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import re
 import sys
 import warnings
@@ -8,21 +9,26 @@ from typing import Any
 from .llm_engine import SGLangEngine
 
 # Tool name mapping: Static fallback mapping (long external names to internal)
+LOCAL_MATH_TOOL_NAME = "Local_Math_Deduction_Tool"
+PYTHON_CODE_TOOL_NAME = "Python_Code_Generator_Tool"
+
 TOOL_NAME_MAPPING_LONG = {
-    "Generalist_Solution_Generator_Tool": {
+    LOCAL_MATH_TOOL_NAME: {
         "class_name": "Base_Generator_Tool",
         "dir_name": "base_generator"
     },
-    "Python_Code_Generator_Tool": {
+    PYTHON_CODE_TOOL_NAME: {
         "class_name": "Python_Coder_Tool",
         "dir_name": "python_coder"
     },
 }
 
-# Short to long mapping for fallback
-TOOL_NAME_MAPPING_SHORT = {
-    "Base_Generator_Tool": "Generalist_Solution_Generator_Tool",
-    "Python_Coder_Tool": "Python_Code_Generator_Tool",
+TOOL_NAME_ALIASES = {
+    "Base_Generator_Tool": LOCAL_MATH_TOOL_NAME,
+    "base_generator": LOCAL_MATH_TOOL_NAME,
+    "Generalist_Solution_Generator_Tool": LOCAL_MATH_TOOL_NAME,
+    "Python_Coder_Tool": PYTHON_CODE_TOOL_NAME,
+    "python_coder": PYTHON_CODE_TOOL_NAME,
 }
 
 class Executor:
@@ -82,14 +88,30 @@ class Executor:
         return normalize_code(command)
 
     async def generate_tool_command(self, query: str, context: str, sub_goal: str, tool_name: str, tool_metadata: dict, step_count: int) -> str:
+        mapping = self._resolve_tool_mapping(tool_name)
+        if mapping["dir_name"] == "base_generator":
+            effective_tool_name = LOCAL_MATH_TOOL_NAME
+        elif mapping["dir_name"] == "python_coder":
+            effective_tool_name = PYTHON_CODE_TOOL_NAME
+        else:
+            effective_tool_name = tool_name.strip().strip("`").strip()
+
+        selected_metadata = {}
+        if isinstance(tool_metadata, dict):
+            selected_metadata = (
+                tool_metadata.get(effective_tool_name)
+                or tool_metadata.get(tool_name)
+                or {}
+            )
+
         prompt_generate_tool_command = f"""
 Task: Generate a precise command to execute the selected tool.
 
 Context:
 - **Query:** {query}
 - **Sub-Goal:** {sub_goal}
-- **Tool Name:** {tool_name}
-- **Tool Metadata:** {tool_metadata}
+- **Tool Name:** {effective_tool_name}
+- **Selected Tool Metadata:** {selected_metadata}
 - **Relevant Data:** {context}
 
 Instructions:
@@ -101,6 +123,9 @@ Instructions:
 6.  **IMPORTANT: `tool.execute()` only accepts a single keyword argument: `query`. Do NOT pass any other keyword arguments (e.g. no `context`, `data`, `input`, etc.).**
 7.  **IMPORTANT: The `query` value MUST be a plain-language description of what to compute. Do NOT put Python code inside the query string.**
 8.  **IMPORTANT: Always wrap the `query` value in triple double-quotes (`\"\"\"...\"\"\"`). This prevents syntax errors from special characters or apostrophes.**
+9.  **IMPORTANT: The `query` value must be a narrow tool request derived from the Sub-Goal and Relevant Data. Do NOT copy the full original Query unless the Sub-Goal explicitly needs every part of it.**
+10. **For `Local_Math_Deduction_Tool`, ask for exactly one local identity, theorem, relationship, or short derivation. Do NOT ask it to solve the full problem or produce the final answer.**
+11. **For `Python_Code_Generator_Tool`, ask for exactly one explicit calculation, simplification, enumeration, or symbolic check. Do NOT ask it to plan a full proof.**
 
 Output Format:
 Present your response in the following structured format. Do not include any extra text or explanations.
@@ -179,25 +204,25 @@ execution = tool.execute(query=\"\"\"Find the number of intersections of y = 4*g
         """Resolve a tool name (TOOL_NAME / class_name / dir_name) to its mapping dict."""
         cleaned = tool_name.strip().strip("`").strip()
 
-        # 1) Try TOOL_NAME (external long name)
+        # Default behavior is strict: the Planner must emit the exact public
+        # tool name listed in Available Tools. Legacy aliases can be enabled
+        # only when explicitly evaluating old checkpoints.
         if cleaned in TOOL_NAME_MAPPING_LONG:
             return TOOL_NAME_MAPPING_LONG[cleaned]
 
-        # 2) Try class_name → long name → mapping
-        long_name = TOOL_NAME_MAPPING_SHORT.get(cleaned)
-        if long_name and long_name in TOOL_NAME_MAPPING_LONG:
-            return TOOL_NAME_MAPPING_LONG[long_name]
+        allow_aliases = os.getenv("AGENTFLOW_ALLOW_TOOL_ALIASES", "false").lower() in {
+            "1", "true", "yes", "y", "on",
+        }
+        if allow_aliases:
+            canonical_name = TOOL_NAME_ALIASES.get(cleaned)
+            if canonical_name and canonical_name in TOOL_NAME_MAPPING_LONG:
+                return TOOL_NAME_MAPPING_LONG[canonical_name]
 
-        # 3) Try dir_name (e.g. "python_coder", "base_generator")
-        for mapping in TOOL_NAME_MAPPING_LONG.values():
-            if mapping["dir_name"] == cleaned or mapping["class_name"] == cleaned:
-                return mapping
-
-        import logging
-        logging.getLogger(__name__).warning(
-            "Unknown tool_name: %r, falling back to Base_Generator_Tool.", tool_name,
+        valid_tools = sorted(TOOL_NAME_MAPPING_LONG.keys())
+        raise ValueError(
+            f"Unknown tool_name: {tool_name!r}. Valid tool names are: {valid_tools}. "
+            "Set AGENTFLOW_ALLOW_TOOL_ALIASES=true only for legacy checkpoint evaluation."
         )
-        return TOOL_NAME_MAPPING_LONG["Generalist_Solution_Generator_Tool"]
 
     def _load_tool(self, tool_name: str, tools_dir: str):
         """Dynamically load and instantiate a tool class given its external tool_name."""

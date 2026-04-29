@@ -22,7 +22,12 @@ OUTPUT=${OUTPUT:-"${SCRIPT_DIR}/eval_results.json"}
 TRAJECTORY_DIR=${TRAJECTORY_DIR:-""}
 
 PLANNER_PORT=${PLANNER_PORT:-30000}
-AUTO_START=${AUTO_START:-1}
+if [ -n "${PLANNER_URL:-}" ]; then
+    AUTO_START=${AUTO_START:-0}
+else
+    AUTO_START=${AUTO_START:-1}
+    PLANNER_URL="http://127.0.0.1:${PLANNER_PORT}/generate"
+fi
 USE_API_FOR_PLANNER=${USE_API_FOR_PLANNER:-0}
 USE_API_FOR_NON_PLANNER=${USE_API_FOR_NON_PLANNER:-1}
 
@@ -43,6 +48,8 @@ AGENTFLOW_API_KEY=${AGENTFLOW_API_KEY:-"${OPENAI_API_KEY:-}"}
 AGENTFLOW_API_MODEL=${AGENTFLOW_API_MODEL:-"gpt-4o-mini"}
 AGENTFLOW_API_TIMEOUT=${AGENTFLOW_API_TIMEOUT:-180}
 AGENTFLOW_API_MAX_RETRIES=${AGENTFLOW_API_MAX_RETRIES:-3}
+AGENTFLOW_API_ENABLE_THINKING=${AGENTFLOW_API_ENABLE_THINKING:-false}
+AGENTFLOW_API_THINKING_BUDGET=${AGENTFLOW_API_THINKING_BUDGET:-""}
 
 PLANNER_API_BASE=${PLANNER_API_BASE:-"${AGENTFLOW_PLANNER_API_BASE:-${AGENTFLOW_API_BASE}}"}
 PLANNER_API_KEY=${PLANNER_API_KEY:-"${AGENTFLOW_PLANNER_API_KEY:-${AGENTFLOW_API_KEY}}"}
@@ -73,7 +80,12 @@ PY_ARGS=(
     --max-new-tokens "${MAX_NEW_TOKENS}"
     --api-timeout "${AGENTFLOW_API_TIMEOUT}"
     --api-max-retries "${AGENTFLOW_API_MAX_RETRIES}"
+    --api-enable-thinking "${AGENTFLOW_API_ENABLE_THINKING}"
 )
+
+if [ -n "${AGENTFLOW_API_THINKING_BUDGET}" ]; then
+    PY_ARGS+=(--api-thinking-budget "${AGENTFLOW_API_THINKING_BUDGET}")
+fi
 
 if [ "${USE_API_FOR_PLANNER}" = "1" ]; then
     PY_ARGS+=(
@@ -93,7 +105,7 @@ else
             --ctx-len "${CTX_LEN}"
         )
     else
-        PY_ARGS+=(--planner-url "http://127.0.0.1:${PLANNER_PORT}/generate")
+        PY_ARGS+=(--planner-url "${PLANNER_URL}")
     fi
 fi
 
@@ -125,7 +137,13 @@ if [ "${NUM_SAMPLES}" -gt 0 ] 2>/dev/null; then
 fi
 
 echo "Starting AgentFlow evaluation"
-echo "  planner: $([ "${USE_API_FOR_PLANNER}" = "1" ] && echo "api ${PLANNER_MODEL}" || echo "local ${MODEL_PATH}")"
+if [ "${USE_API_FOR_PLANNER}" = "1" ]; then
+    echo "  planner: api ${PLANNER_MODEL}"
+elif [ "${AUTO_START}" = "1" ]; then
+    echo "  planner: auto-start local ${MODEL_PATH}"
+else
+    echo "  planner: existing local service ${PLANNER_URL}"
+fi
 echo "  support roles: $([ "${USE_API_FOR_NON_PLANNER}" = "1" ] && echo "api ${EXECUTOR_MODEL}" || echo "local SGLang URLs")"
 echo "  output: ${OUTPUT}"
 

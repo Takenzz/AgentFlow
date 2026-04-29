@@ -22,6 +22,17 @@ DEFAULT_API_MODEL = os.environ.get("AGENTFLOW_API_MODEL", "gpt-4o-mini")
 API_TIMEOUT = float(os.environ.get("AGENTFLOW_API_TIMEOUT", "180"))
 API_MAX_RETRIES = int(os.environ.get("AGENTFLOW_API_MAX_RETRIES", "3"))
 
+
+def _parse_bool_env(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    value = value.strip().lower()
+    if value in ("1", "true", "yes", "y", "on"):
+        return True
+    if value in ("0", "false", "no", "n", "off"):
+        return False
+    raise ValueError(f"Invalid boolean env value: {value!r}")
+
 # ── Eval score tracking ────────────────────────────────────────────────────────
 EVAL_SCORES_FILE = Path(__file__).parent / "eval_scores.json"
 _eval_initialized = False
@@ -65,6 +76,11 @@ def _api_engine(
     base_url = _env(f"{prefix}_API_BASE", default_base or DEFAULT_API_BASE)
     api_key = _env(f"{prefix}_API_KEY", default_key or DEFAULT_API_KEY)
     model = _env(f"{prefix}_MODEL", default_model or DEFAULT_API_MODEL)
+    enable_thinking = _parse_bool_env(
+        _env(f"{prefix}_ENABLE_THINKING", _env("AGENTFLOW_API_ENABLE_THINKING", "false"))
+    )
+    thinking_budget_raw = _env(f"{prefix}_THINKING_BUDGET", _env("AGENTFLOW_API_THINKING_BUDGET"))
+    thinking_budget = int(thinking_budget_raw) if thinking_budget_raw not in (None, "") else None
     if not base_url:
         raise ValueError(f"{prefix}_API_BASE or AGENTFLOW_API_BASE must be set.")
     if not model:
@@ -79,6 +95,8 @@ def _api_engine(
         model_name=model,
         timeout=API_TIMEOUT,
         max_retries=API_MAX_RETRIES,
+        api_enable_thinking=enable_thinking,
+        thinking_budget=thinking_budget,
     )
 
 

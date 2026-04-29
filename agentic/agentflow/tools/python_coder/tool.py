@@ -33,7 +33,8 @@ For optimal results with the {TOOL_NAME}:
 """
 
 TOOL_DESCRIPTION = """
-A tool that generates and executes Python code snippets for calculations and math-related problems.
+A tool that generates and executes Python code snippets for explicit local
+calculations or symbolic checks.
 It returns the printed output from the executed code.
 """
 
@@ -138,9 +139,14 @@ class Python_Coder_Tool(BaseTool):
         try:
             system_prompt = (
                 "You are a Python code generator. "
-                "Write a self-contained Python script that solves the problem and prints the final result.\n"
+                "Write a self-contained Python script for the requested local calculation "
+                "or symbolic check, then print only the computed result.\n"
                 f"{LIMITATION}\n"
                 f"{BEST_PRACTICE}\n"
+                "Do not invent a full proof strategy for a broad math word problem. "
+                "If the request asks for a complete solution or final answer without a "
+                "clear computational sub-goal, return code that prints "
+                "'NEEDS_NUMERIC_SUBGOAL: ask for one explicit calculation'.\n"
                 "Return ONLY a single Python code block wrapped in ```python ... ```."
             )
             messages = [

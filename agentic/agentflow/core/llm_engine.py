@@ -111,6 +111,8 @@ class APIEngine(SGLangEngine):
         retry_min_wait: float = 1.0,
         retry_max_wait: float = 20.0,
         require_non_empty: bool = True,
+        api_enable_thinking: bool | None = False,
+        thinking_budget: int | None = None,
     ):
         super().__init__(url, tokenizer, sampling_params, max_new_tokens, enable_thinking)
         self.api_key = api_key
@@ -120,6 +122,8 @@ class APIEngine(SGLangEngine):
         self.retry_min_wait = retry_min_wait
         self.retry_max_wait = retry_max_wait
         self.require_non_empty = require_non_empty
+        self.api_enable_thinking = api_enable_thinking
+        self.thinking_budget = thinking_budget
         # 复用项目其它模块（eval_orchestra / expert_caller 等）的调用风格：
         # 用 AsyncOpenAI 作为底层异步 HTTP 客户端，支持 OpenAI 兼容的第三方 / 自建服务。
         self.client = AsyncOpenAI(
@@ -147,6 +151,13 @@ class APIEngine(SGLangEngine):
             kwargs["max_tokens"] = params["max_tokens"]
         if "stop" in params:
             kwargs["stop"] = params["stop"]
+        extra_body: dict[str, Any] = {}
+        if self.api_enable_thinking is not None:
+            extra_body["enable_thinking"] = self.api_enable_thinking
+        if self.thinking_budget is not None:
+            extra_body["thinking_budget"] = self.thinking_budget
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         return kwargs
 
     async def _create_completion_with_retry(self, kwargs: dict[str, Any]):

@@ -88,6 +88,17 @@ def _init_http_client(concurrency: int = 256) -> None:
             timeout=httpx.Timeout(None),
         )
 
+
+def _parse_optional_bool(value: str | None) -> bool | None:
+    if value is None or value == "" or value == "auto":
+        return None
+    value = value.strip().lower()
+    if value in ("1", "true", "yes", "y", "on"):
+        return True
+    if value in ("0", "false", "no", "n", "off"):
+        return False
+    raise argparse.ArgumentTypeError("expected one of: auto, true, false, 1, 0, yes, no")
+
 # ──────────────────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -284,6 +295,8 @@ async def run_eval(
     rewarder_model_name: str | None = None,
     api_timeout: float = 180.0,
     api_max_retries: int = 3,
+    api_enable_thinking: bool | None = None,
+    api_thinking_budget: int | None = None,
 ) -> list[dict]:
     """并发地用 Solver + Rewarder 评测全部样本，返回结果列表。
 
@@ -318,6 +331,8 @@ async def run_eval(
             model_name=planner_model_name,
             timeout=api_timeout,
             max_retries=api_max_retries,
+            api_enable_thinking=api_enable_thinking,
+            thinking_budget=api_thinking_budget,
         )
     else:
         planner_engine = SGLangEngine(
@@ -339,6 +354,8 @@ async def run_eval(
             model_name=executor_model_name,
             timeout=api_timeout,
             max_retries=api_max_retries,
+            api_enable_thinking=api_enable_thinking,
+            thinking_budget=api_thinking_budget,
         )
         # Coder / python_coder 走 API（可选用独立 model / base_url）
         coder_engine = APIEngine(
@@ -350,6 +367,8 @@ async def run_eval(
             model_name=coder_model_name,
             timeout=api_timeout,
             max_retries=api_max_retries,
+            api_enable_thinking=api_enable_thinking,
+            thinking_budget=api_thinking_budget,
         )
         # Rewarder：LLM-as-judge，使用单独的 API 配置（默认复用 executor 的）
         rewarder_engine = APIEngine(
@@ -361,6 +380,8 @@ async def run_eval(
             model_name=rewarder_model_name or executor_model_name,
             timeout=api_timeout,
             max_retries=api_max_retries,
+            api_enable_thinking=api_enable_thinking,
+            thinking_budget=api_thinking_budget,
         )
     else:
         # Executor / base_generator：通用生成引擎
@@ -507,6 +528,11 @@ def parse_args() -> argparse.Namespace:
                          help="Timeout in seconds for OpenAI-compatible API calls")
     api_grp.add_argument("--api-max-retries", type=int, default=3,
                          help="Maximum retry count for OpenAI-compatible API calls")
+    api_grp.add_argument("--api-enable-thinking", type=_parse_optional_bool, default=False,
+                         help="Pass provider-specific enable_thinking via extra_body. "
+                              "Use false for Qwen thinking models when supported.")
+    api_grp.add_argument("--api-thinking-budget", type=int, default=None,
+                         help="Pass provider-specific thinking_budget via extra_body when supported")
 
     # Evaluation data: --eval-data NAME PATH [NAME2 PATH2 ...]
     data_grp = p.add_argument_group("Evaluation data")
@@ -695,6 +721,8 @@ def main() -> None:
                     rewarder_model_name=args.rewarder_model or args.executor_model,
                     api_timeout=args.api_timeout,
                     api_max_retries=args.api_max_retries,
+                    api_enable_thinking=args.api_enable_thinking,
+                    api_thinking_budget=args.api_thinking_budget,
                 )
             )
 
