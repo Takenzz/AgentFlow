@@ -41,37 +41,48 @@ echo "HAS_NVLINK: $HAS_NVLINK (detected $NVLINK_COUNT NVLink references)"
 # Get script directory
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
-# Load model configuration
-source "${SCRIPT_DIR}/../../scripts/models/qwen2.5-7B.sh"
+# Load model configuration. Default targets the "about 2B or smaller" setup;
+# override MODEL_CONFIG_SCRIPT for another small planner.
+MODEL_CONFIG_SCRIPT=${MODEL_CONFIG_SCRIPT:-"${SCRIPT_DIR}/../../scripts/models/qwen2.5-1.5B.sh"}
+source "${MODEL_CONFIG_SCRIPT}"
+
+BASE_HF_CHECKPOINT=${BASE_HF_CHECKPOINT:-"/data/models/qwen25_1.5b"}
+REF_LOAD=${REF_LOAD:-"/data/models/qwen2.5_1.5b_dist/"}
+SAVE_DIR=${SAVE_DIR:-"/data/AgentFlow_Qwen25-1.5B-RL/"}
+PROMPT_DATA=${PROMPT_DATA:-"/data/dapo-math-17k/dapo-math-17k.jsonl"}
+EVAL_PROMPT_DATA=${EVAL_PROMPT_DATA:-"/data/aime-2024/aime-2024.jsonl"}
+TRAIN_GPUS=${TRAIN_GPUS:-4}
+TRAIN_TP=${TRAIN_TP:-1}
+ROLLOUT_ENGINE_GPUS=${ROLLOUT_ENGINE_GPUS:-1}
 
 # Checkpoint arguments
 CKPT_ARGS=(
-   --hf-checkpoint /data/models/qwen25_7b
-   --ref-load /data/models/qwen2.5_7b_dist/
-   --save /data/AgentFlow_Qwen25-7B-RL/
-   --save-interval 100
+   --hf-checkpoint ${BASE_HF_CHECKPOINT}
+   --ref-load ${REF_LOAD}
+   --save ${SAVE_DIR}
+   --save-interval ${SAVE_INTERVAL:-100}
 )
 
 # Rollout arguments
 ROLLOUT_ARGS=(
-   --prompt-data /data/dapo-math-17k/dapo-math-17k.jsonl
+   --prompt-data ${PROMPT_DATA}
    --input-key prompt
    --label-key label
    --rollout-shuffle
    --reward-key score
-   --num-epoch 1                  
-   --rollout-batch-size 8     
-   --n-samples-per-prompt 8       
-   --rollout-max-response-len 32768 
-   --rollout-temperature 0.7      
-   --global-batch-size 64   
+   --num-epoch ${NUM_EPOCH:-1}
+   --rollout-batch-size ${ROLLOUT_BATCH_SIZE:-8}
+   --n-samples-per-prompt ${N_SAMPLES_PER_PROMPT:-8}
+   --rollout-max-response-len ${ROLLOUT_MAX_RESPONSE_LEN:-32768}
+   --rollout-temperature ${ROLLOUT_TEMPERATURE:-0.7}
+   --global-batch-size ${GLOBAL_BATCH_SIZE:-64}
    --balance-data
 )
 
 # Evaluation arguments
 EVAL_ARGS=(
-   --eval-interval 20
-   --eval-prompt-data aime /data/aime-2024/aime-2024.jsonl
+   --eval-interval ${EVAL_INTERVAL:-20}
+   --eval-prompt-data aime ${EVAL_PROMPT_DATA}
    --n-samples-per-eval-prompt 1
    --eval-max-response-len 32768
 
@@ -80,7 +91,7 @@ EVAL_ARGS=(
 
 # Performance arguments
 PERF_ARGS=(
-   --tensor-model-parallel-size 4  # 训练侧保留 TP=4（7B 模型稳定性）
+   --tensor-model-parallel-size ${TRAIN_TP}
    --sequence-parallel
    --pipeline-model-parallel-size 1
    --context-parallel-size 1
@@ -92,7 +103,7 @@ PERF_ARGS=(
    --recompute-num-layers 1
 
    --use-dynamic-batch-size
-   --max-tokens-per-gpu 16384
+   --max-tokens-per-gpu ${MAX_TOKENS_PER_GPU:-16384}
 )
 
 # GRPO arguments
@@ -122,7 +133,7 @@ OPTIMIZER_ARGS=(
 # WANDB_ARGS=(
 #    --use-wandb
 #    --wandb-project AgentFlow_pro
-#    --wandb-group AgentFlow_pro-Qwen25-7B-RL
+#    --wandb-group AgentFlow_pro-Qwen25-1.5B-RL
 #    --wandb-key ${WANDB_KEY:-"your_wandb_key_here"}
 # )
 # 如不需要 wandb，注释上面 4 行并取消注释下一行：
@@ -132,9 +143,9 @@ WANDB_ARGS=()
 # config: ROLLOUT_TP_SIZE=1, gpu_memory_utilization=0.6
 # SGLang arguments
 SGLANG_ARGS=(
-   --rollout-num-gpus-per-engine 4
-   --sglang-mem-fraction-static 0.75
-   --sglang-context-length 131072
+   --rollout-num-gpus-per-engine ${ROLLOUT_ENGINE_GPUS}
+   --sglang-mem-fraction-static ${SGLANG_MEM_FRACTION_STATIC:-0.75}
+   --sglang-context-length ${SGLANG_CONTEXT_LENGTH:-65536}
 )
 
 # Misc arguments
@@ -155,9 +166,8 @@ CUSTOM_ARGS=(
 )
 
 # Launch Ray head node
-# config: N_GPUS=8 (原: 4)
 export MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
-ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus 4 --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
+ray start --head --node-ip-address ${MASTER_ADDR} --num-gpus ${TRAIN_GPUS} --disable-usage-stats --dashboard-host=0.0.0.0 --dashboard-port=8265
 
 # Build runtime environment JSON
 RUNTIME_ENV_JSON="{
@@ -166,6 +176,20 @@ RUNTIME_ENV_JSON="{
     \"CUDA_DEVICE_MAX_CONNECTIONS\": \"1\",
     \"NCCL_NVLS_ENABLE\": \"${HAS_NVLINK}\",
     \"SAVE_TRAJECTORY\": \"${SAVE_TRAJECTORY}\",
+    \"AGENTFLOW_API_BASE\": \"${AGENTFLOW_API_BASE:-https://api.openai.com/v1}\",
+    \"AGENTFLOW_API_KEY\": \"${AGENTFLOW_API_KEY:-${OPENAI_API_KEY:-}}\",
+    \"AGENTFLOW_API_MODEL\": \"${AGENTFLOW_API_MODEL:-gpt-4o-mini}\",
+    \"AGENTFLOW_EXECUTOR_API_BASE\": \"${AGENTFLOW_EXECUTOR_API_BASE:-${AGENTFLOW_API_BASE:-https://api.openai.com/v1}}\",
+    \"AGENTFLOW_EXECUTOR_API_KEY\": \"${AGENTFLOW_EXECUTOR_API_KEY:-${AGENTFLOW_API_KEY:-${OPENAI_API_KEY:-}}}\",
+    \"AGENTFLOW_EXECUTOR_MODEL\": \"${AGENTFLOW_EXECUTOR_MODEL:-${AGENTFLOW_API_MODEL:-gpt-4o-mini}}\",
+    \"AGENTFLOW_CODER_API_BASE\": \"${AGENTFLOW_CODER_API_BASE:-${AGENTFLOW_EXECUTOR_API_BASE:-${AGENTFLOW_API_BASE:-https://api.openai.com/v1}}}\",
+    \"AGENTFLOW_CODER_API_KEY\": \"${AGENTFLOW_CODER_API_KEY:-${AGENTFLOW_EXECUTOR_API_KEY:-${AGENTFLOW_API_KEY:-${OPENAI_API_KEY:-}}}}\",
+    \"AGENTFLOW_CODER_MODEL\": \"${AGENTFLOW_CODER_MODEL:-${AGENTFLOW_EXECUTOR_MODEL:-${AGENTFLOW_API_MODEL:-gpt-4o-mini}}}\",
+    \"AGENTFLOW_REWARDER_API_BASE\": \"${AGENTFLOW_REWARDER_API_BASE:-${AGENTFLOW_EXECUTOR_API_BASE:-${AGENTFLOW_API_BASE:-https://api.openai.com/v1}}}\",
+    \"AGENTFLOW_REWARDER_API_KEY\": \"${AGENTFLOW_REWARDER_API_KEY:-${AGENTFLOW_EXECUTOR_API_KEY:-${AGENTFLOW_API_KEY:-${OPENAI_API_KEY:-}}}}\",
+    \"AGENTFLOW_REWARDER_MODEL\": \"${AGENTFLOW_REWARDER_MODEL:-${AGENTFLOW_EXECUTOR_MODEL:-${AGENTFLOW_API_MODEL:-gpt-4o-mini}}}\",
+    \"AGENTFLOW_API_TIMEOUT\": \"${AGENTFLOW_API_TIMEOUT:-180}\",
+    \"AGENTFLOW_API_MAX_RETRIES\": \"${AGENTFLOW_API_MAX_RETRIES:-3}\",
     \"SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN\": \"1\"
   }
 }"
@@ -175,7 +199,7 @@ ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
    -- python3 train.py \
    --actor-num-nodes 1 \
-   --actor-num-gpus-per-node 4 \
+   --actor-num-gpus-per-node ${TRAIN_GPUS} \
    --colocate \
    ${MODEL_ARGS[@]} \
    ${CKPT_ARGS[@]} \

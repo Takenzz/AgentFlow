@@ -1,8 +1,13 @@
 from dataclasses import dataclass, field
+import asyncio
+import logging
+import random
 from typing import Any
 
 from slime.utils.http_utils import post
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -101,17 +106,80 @@ class APIEngine(SGLangEngine):
         enable_thinking: bool = False,
         api_key: str | None = None,
         model_name: str | None = None,
+        timeout: float = 180.0,
+        max_retries: int = 3,
+        retry_min_wait: float = 1.0,
+        retry_max_wait: float = 20.0,
+        require_non_empty: bool = True,
     ):
         super().__init__(url, tokenizer, sampling_params, max_new_tokens, enable_thinking)
         self.api_key = api_key
         self.model_name = model_name
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_min_wait = retry_min_wait
+        self.retry_max_wait = retry_max_wait
+        self.require_non_empty = require_non_empty
         # 复用项目其它模块（eval_orchestra / expert_caller 等）的调用风格：
         # 用 AsyncOpenAI 作为底层异步 HTTP 客户端，支持 OpenAI 兼容的第三方 / 自建服务。
         self.client = AsyncOpenAI(
             api_key=api_key or "EMPTY",
             base_url=url,
-            timeout=180.0,
+            timeout=timeout,
+            max_retries=0,
         )
+
+    def _build_chat_kwargs(self, messages: list[dict[str, str]], params: dict[str, Any]) -> dict[str, Any]:
+        if not self.model_name:
+            raise ValueError("APIEngine requires model_name for OpenAI-compatible chat completions.")
+
+        kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+        }
+        if "temperature" in params:
+            kwargs["temperature"] = params["temperature"]
+        if "top_p" in params:
+            kwargs["top_p"] = params["top_p"]
+        if "max_new_tokens" in params:
+            kwargs["max_tokens"] = params["max_new_tokens"]
+        elif "max_tokens" in params:
+            kwargs["max_tokens"] = params["max_tokens"]
+        if "stop" in params:
+            kwargs["stop"] = params["stop"]
+        return kwargs
+
+    async def _create_completion_with_retry(self, kwargs: dict[str, Any]):
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                completion = await self.client.chat.completions.create(**kwargs)
+                if not completion.choices:
+                    raise RuntimeError("API response contains no choices.")
+                choice = completion.choices[0]
+                content = (choice.message.content or "") if choice.message is not None else ""
+                if self.require_non_empty and not content.strip():
+                    raise RuntimeError("API response content is empty.")
+                return completion
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= self.max_retries:
+                    break
+                wait = min(self.retry_max_wait, self.retry_min_wait * (2 ** attempt))
+                wait = wait * (0.75 + random.random() * 0.5)
+                logger.warning(
+                    "API completion failed (model=%s, attempt=%d/%d): %s; retrying in %.1fs",
+                    self.model_name,
+                    attempt + 1,
+                    self.max_retries + 1,
+                    exc,
+                    wait,
+                )
+                await asyncio.sleep(wait)
+        raise RuntimeError(
+            f"API completion failed after {self.max_retries + 1} attempts "
+            f"(model={self.model_name}, base_url={self.url}): {last_exc}"
+        ) from last_exc
 
     async def generate(
         self,
@@ -135,23 +203,10 @@ class APIEngine(SGLangEngine):
         prompt_token_ids = self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
 
         # 2) 把 SGLang 风格的 sampling_params 映射到 OpenAI chat completions 字段。
-        kwargs: dict[str, Any] = {
-            "model": self.model_name,
-            "messages": messages,
-        }
-        if "temperature" in params:
-            kwargs["temperature"] = params["temperature"]
-        if "top_p" in params:
-            kwargs["top_p"] = params["top_p"]
-        if "max_new_tokens" in params:
-            kwargs["max_tokens"] = params["max_new_tokens"]
-        elif "max_tokens" in params:
-            kwargs["max_tokens"] = params["max_tokens"]
-        if "stop" in params:
-            kwargs["stop"] = params["stop"]
+        kwargs = self._build_chat_kwargs(messages, params)
 
-        # 3) 用 AsyncOpenAI 异步发起请求；完全不会阻塞事件循环。
-        completion = await self.client.chat.completions.create(**kwargs)
+        # 3) 用 AsyncOpenAI 异步发起请求；失败时做 bounded retry，不阻塞事件循环。
+        completion = await self._create_completion_with_retry(kwargs)
 
         choice = completion.choices[0]
         response = (choice.message.content or "") if choice.message is not None else ""
@@ -165,4 +220,3 @@ class APIEngine(SGLangEngine):
             log_probs=[],
             finish_reason=finish_reason,
         )
-

@@ -9,13 +9,18 @@ from slime.rollout.sglang_rollout import GenerateState
 from slime.rollout.rm_hub.math_dapo_utils import last_boxed_only_string, remove_boxed, normalize_final_answer
 from slime.utils.types import Sample
 from slime.utils.metric_utils import compute_rollout_step
-from core.llm_engine import SGLangEngine
+from core.llm_engine import APIEngine, SGLangEngine
 from core.solver import Solver
 from core.rewarder import Rewarder
 
 TOOLS_DIR = Path(__file__).parent / "tools"
 _SAVE_TRAJECTORY = os.environ.get("SAVE_TRAJECTORY", "0").lower() in ("1", "true", "yes")
 TRAJECTORY_DIR = Path(__file__).parent / "trajectories" if _SAVE_TRAJECTORY else None
+DEFAULT_API_BASE = os.environ.get("AGENTFLOW_API_BASE", "https://api.openai.com/v1")
+DEFAULT_API_KEY = os.environ.get("AGENTFLOW_API_KEY") or os.environ.get("OPENAI_API_KEY")
+DEFAULT_API_MODEL = os.environ.get("AGENTFLOW_API_MODEL", "gpt-4o-mini")
+API_TIMEOUT = float(os.environ.get("AGENTFLOW_API_TIMEOUT", "180"))
+API_MAX_RETRIES = int(os.environ.get("AGENTFLOW_API_MAX_RETRIES", "3"))
 
 # ── Eval score tracking ────────────────────────────────────────────────────────
 EVAL_SCORES_FILE = Path(__file__).parent / "eval_scores.json"
@@ -39,6 +44,42 @@ def _extract_original_question(prompt) -> str:
                 return msg["content"]
         return str(prompt)
     return str(prompt)
+
+
+def _env(name: str, default: str | None = None) -> str | None:
+    value = os.environ.get(name)
+    return value if value not in (None, "") else default
+
+
+def _api_engine(
+    *,
+    tokenizer,
+    sampling_params: dict[str, Any],
+    max_new_tokens: int,
+    role: str,
+    default_base: str | None = None,
+    default_key: str | None = None,
+    default_model: str | None = None,
+) -> APIEngine:
+    prefix = f"AGENTFLOW_{role.upper()}"
+    base_url = _env(f"{prefix}_API_BASE", default_base or DEFAULT_API_BASE)
+    api_key = _env(f"{prefix}_API_KEY", default_key or DEFAULT_API_KEY)
+    model = _env(f"{prefix}_MODEL", default_model or DEFAULT_API_MODEL)
+    if not base_url:
+        raise ValueError(f"{prefix}_API_BASE or AGENTFLOW_API_BASE must be set.")
+    if not model:
+        raise ValueError(f"{prefix}_MODEL or AGENTFLOW_API_MODEL must be set.")
+
+    return APIEngine(
+        url=base_url,
+        tokenizer=tokenizer,
+        sampling_params=sampling_params,
+        max_new_tokens=max_new_tokens,
+        api_key=api_key,
+        model_name=model,
+        timeout=API_TIMEOUT,
+        max_retries=API_MAX_RETRIES,
+    )
 
 
 def eval_log(rollout_id, args, data, extra_metrics) -> bool:
@@ -119,18 +160,22 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
         sample.metadata = {}
     sample.metadata["original_question"] = question
 
-    generate_engine = SGLangEngine(
-        url="http://127.0.0.1:30000/generate",
+    # During RL only planner turns contribute to loss. All support roles use
+    # API services so four local GPUs can stay focused on small-planner training.
+    generate_engine = _api_engine(
         tokenizer=state.tokenizer,
         sampling_params=sampling_params,
         max_new_tokens=4096,
+        role="executor",
     )
-
-    coder_engine = SGLangEngine(
-        url="http://127.0.0.1:30001/generate",
+    coder_engine = _api_engine(
         tokenizer=state.tokenizer,
         sampling_params=sampling_params,
         max_new_tokens=4096,
+        role="coder",
+        default_base=generate_engine.url,
+        default_key=generate_engine.api_key,
+        default_model=generate_engine.model_name,
     )
     try:
         engine_map = {
@@ -214,11 +259,14 @@ async def reward_func(args: Any, sample: Sample, **kwargs) -> dict:
     ensuring the reward signal remains stable throughout RL training.
     """
     state = GenerateState(args)
-    engine = SGLangEngine(
-        url="http://127.0.0.1:30000/generate",
+    engine = _api_engine(
         tokenizer=state.tokenizer,
         sampling_params={},
         max_new_tokens=2048,
+        role="rewarder",
+        default_model=_env("AGENTFLOW_EXECUTOR_MODEL", DEFAULT_API_MODEL),
+        default_base=_env("AGENTFLOW_EXECUTOR_API_BASE", DEFAULT_API_BASE),
+        default_key=_env("AGENTFLOW_EXECUTOR_API_KEY", DEFAULT_API_KEY),
     )
     rewarder = Rewarder(llm_engine=engine)
 

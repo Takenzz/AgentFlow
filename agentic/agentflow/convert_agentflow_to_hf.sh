@@ -1,11 +1,11 @@
 #!/bin/bash
 # Convert all AgentFlow Megatron checkpoints to HF format
 
-CHECKPOINT_DIR="/data/AgentFlow_Qwen25-7B-RL"
-OUTPUT_BASE="/data/AgentFlow_Qwen25-7B-RL-HF"
-ORIGIN_HF_DIR="/data/models/qwen25_7b"
-MEGATRON_LM_DIR="/mnt/models/scipt/framework/Megatron-LM"
-CONVERT_SCRIPT="/data/slime-agentic/tools/convert_torch_dist_to_hf.py"
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-"/data/AgentFlow_Qwen25-1.5B-RL"}
+OUTPUT_BASE=${OUTPUT_BASE:-"/data/AgentFlow_Qwen25-1.5B-RL-HF"}
+ORIGIN_HF_DIR=${ORIGIN_HF_DIR:-"/data/models/qwen25_1.5b"}
+MEGATRON_LM_DIR=${MEGATRON_LM_DIR:-"/mnt/models/scipt/framework/Megatron-LM"}
+CONVERT_SCRIPT=${CONVERT_SCRIPT:-"/data/slime-agentic/tools/convert_torch_dist_to_hf.py"}
 
 mkdir -p "$OUTPUT_BASE"
 

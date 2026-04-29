@@ -11,8 +11,8 @@ Usage (server already running):
 
 Usage (auto-launch SGLang server):
     python eval_baseline.py \\
-        --model /data/AgentFlow_pro-Qwen25-7B-RL/ \\
-        --start-server --tp 4 \\
+        --model /data/AgentFlow_Qwen25-1.5B-RL-HF/ \\
+        --start-server --tp 1 \\
         --eval-data aime /data/aime-2024/aime-2024.jsonl \\
         --output baseline_results.json
 """

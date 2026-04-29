@@ -40,8 +40,8 @@ Checkpoint 加载（Megatron → HF）：
 
 典型用法（自动拉起 SGLang）：
     python eval_agentflow.py \\
-        --model /data/AgentFlow_pro-Qwen25-7B-RL/ \\
-        --start-servers --tp 4 \\
+        --model /data/AgentFlow_Qwen25-1.5B-RL-HF/ \\
+        --start-servers --tp 1 --use-api-for-non-planner \\
         --eval-data aime /data/aime-2024/aime-2024.jsonl \\
         --output eval_results.json
 """
@@ -264,6 +264,7 @@ async def _eval_one(
 
 async def run_eval(
     samples: list[dict],
+    planner_backend: str,
     planner_url: str,
     executor_url: str,
     coder_url: str,
@@ -272,6 +273,8 @@ async def run_eval(
     concurrency: int,
     max_steps: int,
     trajectory_dir: str | None,
+    planner_api_key: str | None = None,
+    planner_model_name: str | None = None,
     use_api_for_non_planner: bool = False,
     executor_api_key: str | None = None,
     executor_model_name: str | None = None,
@@ -279,6 +282,8 @@ async def run_eval(
     coder_model_name: str | None = None,
     rewarder_api_key: str | None = None,
     rewarder_model_name: str | None = None,
+    api_timeout: float = 180.0,
+    api_max_retries: int = 3,
 ) -> list[dict]:
     """并发地用 Solver + Rewarder 评测全部样本，返回结果列表。
 
@@ -301,14 +306,27 @@ async def run_eval(
 
     max_new_tokens = sampling_params.get("max_new_tokens", 2048)
 
-    # Planner：主模型（被评测对象），始终走 SGLangEngine；关闭 thinking
-    planner_engine = SGLangEngine(
-        url=planner_url,
-        tokenizer=tokenizer,
-        sampling_params=sampling_params,
-        max_new_tokens=max_new_tokens,
-        enable_thinking=False,
-    )
+    # Planner：主模型（被评测对象）。本地小模型走 SGLang；大模型对照可走 API。
+    if planner_backend == "api":
+        planner_engine = APIEngine(
+            url=planner_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+            enable_thinking=False,
+            api_key=planner_api_key,
+            model_name=planner_model_name,
+            timeout=api_timeout,
+            max_retries=api_max_retries,
+        )
+    else:
+        planner_engine = SGLangEngine(
+            url=planner_url,
+            tokenizer=tokenizer,
+            sampling_params=sampling_params,
+            max_new_tokens=max_new_tokens,
+            enable_thinking=False,
+        )
 
     if use_api_for_non_planner:
         # Executor / base_generator / verifier / final_output 全部走 API
@@ -319,6 +337,8 @@ async def run_eval(
             max_new_tokens=max_new_tokens,
             api_key=executor_api_key,
             model_name=executor_model_name,
+            timeout=api_timeout,
+            max_retries=api_max_retries,
         )
         # Coder / python_coder 走 API（可选用独立 model / base_url）
         coder_engine = APIEngine(
@@ -328,6 +348,8 @@ async def run_eval(
             max_new_tokens=max_new_tokens,
             api_key=coder_api_key,
             model_name=coder_model_name,
+            timeout=api_timeout,
+            max_retries=api_max_retries,
         )
         # Rewarder：LLM-as-judge，使用单独的 API 配置（默认复用 executor 的）
         rewarder_engine = APIEngine(
@@ -337,6 +359,8 @@ async def run_eval(
             max_new_tokens=2048,
             api_key=rewarder_api_key or executor_api_key,
             model_name=rewarder_model_name or executor_model_name,
+            timeout=api_timeout,
+            max_retries=api_max_retries,
         )
     else:
         # Executor / base_generator：通用生成引擎
@@ -409,14 +433,25 @@ def parse_args() -> argparse.Namespace:
     model_grp.add_argument("--tokenizer", default=None,
                            help="HF tokenizer path (defaults to --model)")
 
-    # Server connection (used when the service is already running)
+    # Planner connection (local SGLang or OpenAI-compatible API)
     # Corresponds to the three engines in rollout.py:
     #   planner_url   -> engine          (sglang_router / main model)
-    #   executor_url  -> generate_engine (port 30000, executor / verifier / base_generator / final_output)
-    #   coder_url     -> coder_engine    (port 30001, python_coder)
-    srv_grp = p.add_argument_group("Server connection")
+    #   executor_url  -> generate_engine (executor / verifier / base_generator / final_output)
+    #   coder_url     -> coder_engine    (python_coder)
+    srv_grp = p.add_argument_group("Planner connection")
+    srv_grp.add_argument("--planner-backend", choices=["sglang", "api"], default="sglang",
+                         help="Run Planner from local SGLang or OpenAI-compatible API")
     srv_grp.add_argument("--planner-url",  default="http://127.0.0.1:30000/generate",
-                         help="SGLang generate URL for the Planner / default engine")
+                         help="SGLang generate URL for Planner, or API base_url when --planner-backend=api")
+    srv_grp.add_argument("--planner-api-base", default=None,
+                         help="OpenAI-compatible base_url for Planner API; overrides --planner-url in API mode")
+    srv_grp.add_argument("--planner-api-key", default=None,
+                         help="API key for Planner API (env OPENAI_API_KEY fallback if not provided)")
+    srv_grp.add_argument("--planner-model", default=None,
+                         help="Model name for Planner API, required when --planner-backend=api")
+
+    # Server connection for legacy all-local mode.
+    srv_grp = p.add_argument_group("Local support-role server connection")
     srv_grp.add_argument("--executor-url", default="http://127.0.0.1:30001/generate",
                          help="SGLang generate URL for the Executor / base_generator engine")
     srv_grp.add_argument("--coder-url",    default="http://127.0.0.1:30002/generate",
@@ -425,7 +460,8 @@ def parse_args() -> argparse.Namespace:
     # Auto-launch servers
     auto_grp = p.add_argument_group("Auto-launch SGLang servers")
     auto_grp.add_argument("--start-servers", action="store_true",
-                          help="Auto-launch three SGLang servers (requires --model)")
+                          help="Auto-launch the local Planner SGLang server (requires --model). "
+                               "Support-role servers are only launched when --use-api-for-non-planner is off.")
     auto_grp.add_argument("--planner-port",  type=int, default=30000,
                           help="Planner server port")
     auto_grp.add_argument("--executor-port", type=int, default=30001,
@@ -467,6 +503,10 @@ def parse_args() -> argparse.Namespace:
                          help="API key for rewarder API (defaults to --executor-api-key)")
     api_grp.add_argument("--rewarder-model",    default=None,
                          help="Model name for reward judge (defaults to --executor-model)")
+    api_grp.add_argument("--api-timeout", type=float, default=180.0,
+                         help="Timeout in seconds for OpenAI-compatible API calls")
+    api_grp.add_argument("--api-max-retries", type=int, default=3,
+                         help="Maximum retry count for OpenAI-compatible API calls")
 
     # Evaluation data: --eval-data NAME PATH [NAME2 PATH2 ...]
     data_grp = p.add_argument_group("Evaluation data")
@@ -544,9 +584,23 @@ def main() -> None:
     # 当 --use-api-for-non-planner 时，executor / coder 使用远程 API，
     # 此处只需要启动 planner 一个 SGLang 服务即可。
     servers: list[SGLangServer] = []
-    planner_url  = args.planner_url
+    planner_url  = args.planner_api_base or args.planner_url
     executor_url = args.executor_url
     coder_url    = args.coder_url
+
+    if args.planner_backend == "api":
+        if not (args.planner_api_base or args.planner_url):
+            logger.error("--planner-backend=api requires --planner-api-base (or --planner-url as API base_url).")
+            sys.exit(1)
+        if planner_url.endswith("/generate"):
+            logger.error("--planner-backend=api expects an OpenAI-compatible base_url, not an SGLang /generate URL.")
+            sys.exit(1)
+        if not args.planner_model:
+            logger.error("--planner-backend=api requires --planner-model.")
+            sys.exit(1)
+        if not args.planner_api_key:
+            args.planner_api_key = os.environ.get("OPENAI_API_KEY")
+        logger.info("Planner will use OpenAI-compatible API: %s (model=%s)", planner_url, args.planner_model)
 
     # 非 planner 走 API 时，把 executor_url / coder_url 覆盖为 API base_url
     if args.use_api_for_non_planner:
@@ -565,39 +619,42 @@ def main() -> None:
                     coder_url, args.coder_model or args.executor_model)
 
     if args.start_servers:
-        if not args.model:
-            logger.error("--start-servers requires --model to be specified.")
-            sys.exit(1)
-
-        planner_srv = SGLangServer(
-            args.model, args.planner_port, args.tp,
-            args.mem_fraction, args.ctx_len,
-        )
-        servers.append(planner_srv)
-
-        # 仅在不使用 API 时才启动 executor / coder 的 SGLang 服务
-        if not args.use_api_for_non_planner:
-            executor_srv = SGLangServer(
-                args.model, args.executor_port, args.tp,
-                args.mem_fraction, args.ctx_len,
-            )
-            coder_srv = SGLangServer(
-                args.model, args.coder_port, args.tp,
-                args.mem_fraction, args.ctx_len,
-            )
-            servers.extend([executor_srv, coder_srv])
-
-        planner_url  = f"http://127.0.0.1:{args.planner_port}/generate"
-        if not args.use_api_for_non_planner:
-            executor_url = f"http://127.0.0.1:{args.executor_port}/generate"
-            coder_url    = f"http://127.0.0.1:{args.coder_port}/generate"
-
-        for srv in servers:
-            if not srv.wait_ready(timeout=300):
-                logger.error("SGLang server failed to start; aborting evaluation.")
-                for s in servers:
-                    s.stop()
+        if args.planner_backend == "api":
+            logger.info("--start-servers ignored for Planner API mode.")
+        else:
+            if not args.model:
+                logger.error("--start-servers requires --model to be specified.")
                 sys.exit(1)
+
+            planner_srv = SGLangServer(
+                args.model, args.planner_port, args.tp,
+                args.mem_fraction, args.ctx_len,
+            )
+            servers.append(planner_srv)
+
+            # 仅在不使用 API 时才启动 executor / coder 的 SGLang 服务
+            if not args.use_api_for_non_planner:
+                executor_srv = SGLangServer(
+                    args.model, args.executor_port, args.tp,
+                    args.mem_fraction, args.ctx_len,
+                )
+                coder_srv = SGLangServer(
+                    args.model, args.coder_port, args.tp,
+                    args.mem_fraction, args.ctx_len,
+                )
+                servers.extend([executor_srv, coder_srv])
+
+            planner_url  = f"http://127.0.0.1:{args.planner_port}/generate"
+            if not args.use_api_for_non_planner:
+                executor_url = f"http://127.0.0.1:{args.executor_port}/generate"
+                coder_url    = f"http://127.0.0.1:{args.coder_port}/generate"
+
+            for srv in servers:
+                if not srv.wait_ready(timeout=300):
+                    logger.error("SGLang server failed to start; aborting evaluation.")
+                    for s in servers:
+                        s.stop()
+                    sys.exit(1)
 
     sampling_params = {
         "temperature":    args.temperature,
@@ -618,6 +675,7 @@ def main() -> None:
             results = asyncio.run(
                 run_eval(
                     samples=samples,
+                    planner_backend=args.planner_backend,
                     planner_url=planner_url,
                     executor_url=executor_url,
                     coder_url=coder_url,
@@ -626,6 +684,8 @@ def main() -> None:
                     concurrency=args.concurrency,
                     max_steps=args.max_steps,
                     trajectory_dir=args.trajectory_dir,
+                    planner_api_key=args.planner_api_key,
+                    planner_model_name=args.planner_model,
                     use_api_for_non_planner=args.use_api_for_non_planner,
                     executor_api_key=args.executor_api_key,
                     executor_model_name=args.executor_model,
@@ -633,6 +693,8 @@ def main() -> None:
                     coder_model_name=args.coder_model or args.executor_model,
                     rewarder_api_key=args.rewarder_api_key or args.executor_api_key,
                     rewarder_model_name=args.rewarder_model or args.executor_model,
+                    api_timeout=args.api_timeout,
+                    api_max_retries=args.api_max_retries,
                 )
             )
 

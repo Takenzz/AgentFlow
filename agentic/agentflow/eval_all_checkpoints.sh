@@ -1,5 +1,6 @@
 #!/bin/bash
 # 对所有转换后的 HF checkpoint 循环评估，每个跑 NUM_RUNS 次，取最高分，记录为 JSONL。
+# 仅逐个启动本地 Planner；其他角色默认走 API。
 #
 # 用法：
 #   bash eval_all_checkpoints.sh
@@ -12,10 +13,8 @@ SLIME_ROOT="$(cd -- "${SCRIPT_DIR}/../.." &>/dev/null && pwd)"
 export PYTHONPATH="${SCRIPT_DIR}:${SLIME_ROOT}:${PYTHONPATH:-}"
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-CHECKPOINT_DIR=${CHECKPOINT_DIR:-"/data/AgentFlow_Qwen25-7B-RL-HF"}
-TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/models/qwen25_7b"}
-MODEL_BASE=${MODEL_BASE:-"/data/models/qwen25_7b"}
-MODEL_CODER=${MODEL_CODER:-"/data/models/qwen2.5_7b_codeer"}
+CHECKPOINT_DIR=${CHECKPOINT_DIR:-"/data/AgentFlow_Qwen25-1.5B-RL-HF"}
+TOKENIZER_PATH=${TOKENIZER_PATH:-"/data/models/qwen25_1.5b"}
 
 CTX_LEN=${CTX_LEN:-131072}
 MEM_FRACTION=${MEM_FRACTION:-0.7}
@@ -24,6 +23,22 @@ MAX_STEPS=${MAX_STEPS:-5}
 MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-4096}
 NUM_SAMPLES=${NUM_SAMPLES:-0}
 NUM_RUNS=${NUM_RUNS:-10}
+
+AGENTFLOW_API_BASE=${AGENTFLOW_API_BASE:-"https://api.openai.com/v1"}
+AGENTFLOW_API_KEY=${AGENTFLOW_API_KEY:-"${OPENAI_API_KEY:-}"}
+AGENTFLOW_API_MODEL=${AGENTFLOW_API_MODEL:-"gpt-4o-mini"}
+AGENTFLOW_API_TIMEOUT=${AGENTFLOW_API_TIMEOUT:-180}
+AGENTFLOW_API_MAX_RETRIES=${AGENTFLOW_API_MAX_RETRIES:-3}
+
+EXECUTOR_API_BASE=${EXECUTOR_API_BASE:-"${AGENTFLOW_EXECUTOR_API_BASE:-${AGENTFLOW_API_BASE}}"}
+EXECUTOR_API_KEY=${EXECUTOR_API_KEY:-"${AGENTFLOW_EXECUTOR_API_KEY:-${AGENTFLOW_API_KEY}}"}
+EXECUTOR_MODEL=${EXECUTOR_MODEL:-"${AGENTFLOW_EXECUTOR_MODEL:-${AGENTFLOW_API_MODEL}}"}
+CODER_API_BASE=${CODER_API_BASE:-"${AGENTFLOW_CODER_API_BASE:-${EXECUTOR_API_BASE}}"}
+CODER_API_KEY=${CODER_API_KEY:-"${AGENTFLOW_CODER_API_KEY:-${EXECUTOR_API_KEY}}"}
+CODER_MODEL=${CODER_MODEL:-"${AGENTFLOW_CODER_MODEL:-${EXECUTOR_MODEL}}"}
+REWARDER_API_BASE=${REWARDER_API_BASE:-"${AGENTFLOW_REWARDER_API_BASE:-${EXECUTOR_API_BASE}}"}
+REWARDER_API_KEY=${REWARDER_API_KEY:-"${AGENTFLOW_REWARDER_API_KEY:-${EXECUTOR_API_KEY}}"}
+REWARDER_MODEL=${REWARDER_MODEL:-"${AGENTFLOW_REWARDER_MODEL:-${EXECUTOR_MODEL}}"}
 
 LOG_DIR="/tmp/agentflow_ckpt_eval_logs"
 TMP_DIR="/tmp/agentflow_ckpt_eval_tmp"
@@ -57,48 +72,19 @@ stop_planner() {
 
 # ── 全局 cleanup ──────────────────────────────────────────────────────────────
 cleanup() {
-    log "关闭所有 SGLang 服务..."
-    pkill -f "sglang.launch_server.*--port 3000" 2>/dev/null || true
+    log "关闭 Planner SGLang 服务..."
+    pkill -f "sglang.launch_server.*--port 30000" 2>/dev/null || true
     sleep 2
     log "清理完成。"
 }
 trap cleanup EXIT
 
 # ── Step 1: 清理旧进程 ────────────────────────────────────────────────────────
-log "清理旧 SGLang 进程..."
-pkill -f "sglang.launch_server.*--port 3000" 2>/dev/null || true
+log "清理旧 Planner SGLang 进程..."
+pkill -f "sglang.launch_server.*--port 30000" 2>/dev/null || true
 sleep 2
 
-# ── Step 2: 启动 Executor + Coder（只启动一次，整个脚本共享）────────────────
-# GPU 2,3 — base 模型，port 30001
-CUDA_VISIBLE_DEVICES=2,3 conda run -n sglang --no-capture-output \
-    bash -c "
-        export SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
-        python3 -m sglang.launch_server \
-            --model-path ${MODEL_BASE} \
-            --port 30001 \
-            --context-length ${CTX_LEN} \
-            --tp 2
-    " > "$LOG_DIR/sglang_30001.log" 2>&1 &
-log "Executor (base)  PID=$! (GPU 2,3, port 30001)"
-
-# GPU 4,5 — coder 模型，port 30002
-CUDA_VISIBLE_DEVICES=4,5 conda run -n sglang --no-capture-output \
-    bash -c "
-        export SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
-        python3 -m sglang.launch_server \
-            --model-path ${MODEL_CODER} \
-            --port 30002 \
-            --context-length ${CTX_LEN} \
-            --tp 2
-    " > "$LOG_DIR/sglang_30002.log" 2>&1 &
-log "Coder            PID=$! (GPU 4,5, port 30002)"
-
-wait_port "Executor-30001" 127.0.0.1 30001 600
-wait_port "Coder-30002"    127.0.0.1 30002 600
-log "Executor + Coder 已就绪。"
-
-# ── Step 3: 收集所有 checkpoint ───────────────────────────────────────────────
+# ── Step 2: 收集所有 checkpoint ───────────────────────────────────────────────
 mapfile -t CKPTS < <(ls -d "${CHECKPOINT_DIR}"/iter_* 2>/dev/null | sort)
 
 if [ ${#CKPTS[@]} -eq 0 ]; then
@@ -122,8 +108,18 @@ COMMON_ARGS=(
     --temperature    0.7
     --top-p          0.95
     --planner-url    "http://127.0.0.1:30000/generate"
-    --executor-url   "http://127.0.0.1:30001/generate"
-    --coder-url      "http://127.0.0.1:30002/generate"
+    --use-api-for-non-planner
+    --executor-api-base "${EXECUTOR_API_BASE}"
+    --executor-api-key "${EXECUTOR_API_KEY}"
+    --executor-model "${EXECUTOR_MODEL}"
+    --coder-api-base "${CODER_API_BASE}"
+    --coder-api-key "${CODER_API_KEY}"
+    --coder-model "${CODER_MODEL}"
+    --rewarder-api-base "${REWARDER_API_BASE}"
+    --rewarder-api-key "${REWARDER_API_KEY}"
+    --rewarder-model "${REWARDER_MODEL}"
+    --api-timeout "${AGENTFLOW_API_TIMEOUT}"
+    --api-max-retries "${AGENTFLOW_API_MAX_RETRIES}"
 )
 if [ "${NUM_SAMPLES}" -gt 0 ] 2>/dev/null; then
     COMMON_ARGS+=(--num-samples "${NUM_SAMPLES}")
@@ -143,15 +139,15 @@ for ckpt_path in "${CKPTS[@]}"; do
     log "开始评估：${ckpt_name}"
     log "模型路径：${ckpt_path}"
 
-    # 启动 Planner（GPU 0,1，port 30000）
-    CUDA_VISIBLE_DEVICES=0,1 conda run -n sglang --no-capture-output \
+    # 启动 Planner（默认单卡，port 30000）
+    CUDA_VISIBLE_DEVICES=${PLANNER_CUDA_VISIBLE_DEVICES:-0} conda run -n sglang --no-capture-output \
         bash -c "
             export SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1
             python3 -m sglang.launch_server \
                 --model-path ${ckpt_path} \
                 --port 30000 \
                 --context-length ${CTX_LEN} \
-                --tp 2
+                --tp ${PLANNER_TP:-1}
         " > "$LOG_DIR/sglang_30000_${ckpt_name}.log" 2>&1 &
     PLANNER_PID=$!
     log "Planner PID=${PLANNER_PID}，日志: $LOG_DIR/sglang_30000_${ckpt_name}.log"
