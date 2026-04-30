@@ -359,3 +359,153 @@ bash agentic/agentflow/eval_agentflow.sh
 ```
 
 跑完这三步，就有了单卡条件下最小但完整的 baseline 对照。
+
+## 13. 为什么单卡要按这个顺序测
+
+顺序很重要，因为每一步都在排除一种风险。
+
+| 顺序 | 测试 | 排除什么风险 |
+|---|---|---|
+| 1 | 数据和 tokenizer 检查 | 路径错、字段错、模型加载不了 |
+| 2 | 单轮 baseline | 基础模型/SGLang 本身不能推理 |
+| 3 | API Planner AgentFlow | AgentFlow 代码、工具、Rewarder 不通 |
+| 4 | 本地 Planner AgentFlow | 单卡部署 Planner + API 支持角色不通 |
+| 5 | 轨迹保存 | 不知道错误来自哪一步 |
+| 6 | 训练冒烟 | Ray/slime/GRPO 接口不通 |
+
+面试时可以这样说：
+
+> 我在单卡上不会直接跑大规模 RL，而是先分层验证。先验证模型能单轮回答，再验证 AgentFlow 链路，再验证本地 Planner 能接入，最后只做极小训练冒烟。这样即使失败，也能知道失败发生在哪一层。
+
+## 14. 三个 baseline 分别回答什么问题
+
+### 14.1 单轮 QA baseline
+
+回答：
+
+```text
+基础模型不用工具，直接答题有多强？
+```
+
+如果这个分数很低，不奇怪，因为 1.5B/2B 小模型数学能力有限。
+
+### 14.2 API Planner AgentFlow
+
+回答：
+
+```text
+如果 Planner 很强，这套 AgentFlow 工具链上限在哪里？
+```
+
+如果 API Planner 也很差，说明问题可能不在小 Planner，而在工具设计、final_output、Rewarder 或数据格式。
+
+### 14.3 本地 Planner AgentFlow
+
+回答：
+
+```text
+小 Planner 在同一套工具链里能做到什么程度？
+```
+
+RL 前后都跑这个，就能看训练是否改善 Planner 调度能力。
+
+## 15. 如何读输出 JSON
+
+评测 JSON 里重点看这些字段：
+
+| 字段 | 含义 | 怎么分析 |
+|---|---|---|
+| `question` | 原题 | 看题型 |
+| `label` | 标准答案 | 和 pred 对比 |
+| `pred` | 抽取出的预测答案 | 是否格式正确 |
+| `final_output` | 最终回答全文 | 是否真的解题 |
+| `score` | reward/判分结果 | 是否合理 |
+| `error` | 异常信息 | 判断链路是否失败 |
+
+不要只看总 accuracy。小样本 5 条时，accuracy 波动很大，更重要的是看每条样本的轨迹是否合理。
+
+## 16. 如何读 trajectory
+
+trajectory 是面试准备最有价值的材料。你可以挑一条成功和一条失败来讲。
+
+成功轨迹应该长这样：
+
+```text
+analysis 理解题意
+  -> next_step 选择合适工具
+  -> tool_command 可解析
+  -> execution_result 有有效中间结果
+  -> Verifier 判断 STOP 合理
+  -> final_output 使用中间结果并给 \boxed{}
+```
+
+失败轨迹按这个模板记录：
+
+| 检查点 | 你的结论 |
+|---|---|
+| analysis 是否错 |  |
+| 第一步工具是否错 |  |
+| Context 是否缺信息 |  |
+| command 是否解析失败 |  |
+| tool result 是否有用 |  |
+| Verifier 是否过早 STOP |  |
+| final_output 是否没吸收 memory |  |
+| Rewarder 是否误判 |  |
+
+这样你在面试里不会只说“模型答错了”，而是能说清楚“错在 Planner 选择工具、还是错在工具结果整合”。
+
+## 17. 单卡参数怎么调
+
+单卡 4090 常见调参顺序：
+
+| 如果出现 | 先调什么 | 再调什么 |
+|---|---|---|
+| SGLang OOM | `CTX_LEN=8192` | `MEM_FRACTION=0.65` |
+| 评测 OOM | `CONCURRENCY=1` | `MAX_NEW_TOKENS=1024` |
+| API 太慢 | `MAX_STEPS=2` | `NUM_SAMPLES=3` |
+| Planner 输出太短 | 增大 `MAX_NEW_TOKENS` | 检查 stop token |
+| Planner 输出太乱 | 降 `TEMPERATURE` | 做 SFT 格式热启动 |
+| 工具调用总失败 | 看 trajectory | 检查 Tool Name 和 command |
+
+建议新手先用：
+
+```bash
+NUM_SAMPLES=3
+CONCURRENCY=1
+MAX_STEPS=2
+MAX_NEW_TOKENS=1024
+CTX_LEN=8192
+```
+
+跑通后再逐步加。
+
+## 18. 面试里怎么解释“单卡 baseline”
+
+可以这样回答：
+
+> 单卡阶段我的目标不是追求最终指标，而是验证整个系统闭环。我先跑单轮 QA baseline，确认模型和数据能工作；再跑 API Planner AgentFlow，确认工具、Verifier、Rewarder 和 final_output 链路能工作；然后跑本地 Planner AgentFlow，确认小模型能接入调度；最后保存轨迹分析错误。如果这些都通过，再做极小 GRPO 冒烟，确认 slime、Ray、rollout、reward 和 custom_convert 能串起来。正式指标留到多卡训练后评测。
+
+## 19. 单卡报告模板
+
+你可以把结果整理成这样：
+
+```text
+环境：
+- GPU: 1x RTX 4090
+- Planner: Qwen2.5-1.5B
+- Support roles: gpt-4o-mini API
+- Dataset: AIME 2024, first 5 samples
+
+实验：
+1. Single-turn baseline: x/5
+2. API Planner AgentFlow: x/5
+3. Local raw Planner AgentFlow: x/5
+4. Local RL Planner AgentFlow: x/5
+
+观察：
+- Local Planner 主要失败在工具名/STOP/final_output/计算错误
+- API Planner 上限说明工具链是否有潜力
+- 后续需要 SFT/OPD/GRPO 解决 Planner 调度问题
+```
+
+这个模板很适合面试前整理成讲稿。

@@ -125,12 +125,8 @@ Context:
 Instructions:
 1. Select exactly one available tool for the next atomic step.
 2. Create one narrow Sub-Goal that the selected tool can complete in one call.
-3. Provide only the compact Context needed for that tool call: given values, symbols, and previous tool results.
-4. Do NOT solve the math problem yourself. Do NOT derive formulas or do arithmetic in your response.
-5. Do NOT ask a tool to solve the full original problem or produce the final answer.
-6. Use `Local_Math_Deduction_Tool` only for one local identity, theorem, relationship, or short derivation.
-7. Use `Python_Code_Generator_Tool` only for one explicit computation, simplification, enumeration, or symbolic check.
-8. If a previous tool result is broad, refused, or unusable, create a smaller sub-goal instead of repeating the same request.
+3. Provide all necessary **context** (data, file names, variables) for the tool to function.
+4. If a previous tool result is broad, refused, or unusable, create a smaller sub-goal instead of repeating the same request.
 
 Response Format:
 Justification: <one concise sentence about why this tool is next>
@@ -141,8 +137,6 @@ Tool Name: <exactly one name from Available Tools>
 Rules:
 - Select only ONE tool.
 - The Tool Name must exactly match one of the Available Tools.
-- The Sub-Goal must not contain the final target unless the current step is only computing a previously derived expression.
-- The Context section must be short and tool-facing; do not include a full solution draft.
 - Output only the four response-format lines above. No numbering, Markdown bullets, or extra sections.
 
 """

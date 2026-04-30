@@ -399,3 +399,223 @@ Planner 输出的是自然语言的工具选择和子目标，Executor 把它转
 | 解释只训 Planner | 我把支持角色固定为环境，把可学习决策集中在 Planner，降低显存和 credit assignment 难度。 |
 | 解释失败排查 | 我先看 reward 分布，再看轨迹，把失败分成理解、工具选择、执行、停止、汇总、判分六类。 |
 | 解释 baseline | 我用单轮 QA、本地 AgentFlow、API Planner 三组对照拆分基础模型能力、系统能力和教师上限。 |
+
+## 18. 新手版：先分清“模型、环境、训练框架”
+
+很多人在面试里讲不清，是因为把所有东西都叫模型。这个项目里至少有三层：
+
+| 层 | 包含什么 | 是否训练 |
+|---|---|---:|
+| 被训练模型 | 本地 Planner | 是 |
+| Agent 环境 | Executor、Tool、Memory、Verifier、final_output、Rewarder | 否 |
+| 训练框架 | slime、Ray、SGLang、custom rollout、custom convert | 否 |
+
+你可以这样理解：
+
+```text
+Planner 是学生
+Agent 环境是考试场景和工具
+Rewarder 是阅卷老师
+slime/GRPO 是训练方法
+```
+
+面试中要避免说“我训练了整个 AgentFlow”。更准确的是：
+
+> 我训练的是 AgentFlow 里的 Planner 策略模型，其他模块作为固定环境和支持角色。
+
+## 19. GRPO 更细的直觉解释
+
+假设同一道题采 4 条轨迹：
+
+| 轨迹 | Planner 行为 | reward |
+|---|---|---:|
+| A | 选对工具，最终答对 | 1 |
+| B | 工具选错，答错 | 0 |
+| C | 过早停止，答错 | 0 |
+| D | 多走一步但答对 | 1 |
+
+GRPO 会在这组内部比较。它不是简单地说 reward=1 就永远好，而是看同一题不同输出的相对表现。
+
+直觉：
+
+```text
+同一题里答对的轨迹 -> 提高概率
+同一题里答错的轨迹 -> 降低概率
+```
+
+放到 AgentFlow：
+
+```text
+轨迹 A 的 plan / next_step turns 都会得到正向信号
+轨迹 B/C 的 plan / next_step turns 得到负向信号
+轨迹 D 也得到正向信号，但如果它步数过长，后续可以用长度惩罚或分析平均 step 控制
+```
+
+重要限制：
+
+| 限制 | 解释 |
+|---|---|
+| reward 是稀疏的 | 只有最终答案对错，不知道哪一步错 |
+| credit assignment 不完美 | 答错可能是某一步错，也可能是 final_output 错 |
+| 需要多样性 | 如果同题采样都一样，GRPO 学不到差异 |
+| reward 噪声会放大 | judge 错了会给错误方向的信号 |
+
+所以你需要轨迹分析、SFT/OPD 热启动和 reward 质量控制。
+
+## 20. SFT 数据应该长什么样
+
+SFT 不一定要训练完整 answer。对于这个项目，最有价值的是训练 Planner 的格式和决策。
+
+### 20.1 plan 样本
+
+输入：
+
+```text
+Task: Analyze the given query...
+Query: <数学题>
+Available tools: [...]
+Metadata: {...}
+```
+
+目标输出：
+
+```text
+这道题需要先识别核心关系，再用局部数学推理工具检查一个关键公式，必要时用 Python 做枚举或数值验证。需要避免直接跳最终答案。
+```
+
+### 20.2 next_step 样本
+
+输入包含：
+
+```text
+Query
+Query Analysis
+Available Tools
+Previous Steps
+```
+
+目标输出必须稳定：
+
+```text
+Justification: ...
+Context: ...
+Sub-Goal: ...
+Tool Name: Python_Code_Generator_Tool
+```
+
+过滤规则：
+
+| 坏样本 | 为什么过滤 |
+|---|---|
+| 缺少 Tool Name | parser 解析不了 |
+| Tool Name 不在工具列表 | 默认会工具加载失败；只有旧 checkpoint 评测才开启 alias 兼容 |
+| Sub-Goal 太大 | 工具变成直接解题 |
+| Context 没有必要信息 | Executor 不知道怎么写 query |
+| 把工具结果当 Planner 输出 | loss 会教错角色 |
+
+## 21. OPD 的具体落地流程
+
+一个可落地的小规模 OPD 流程：
+
+```text
+1. 用当前 Planner 跑 20 条题
+2. 保存 trajectory
+3. 找出失败轨迹或低质量轨迹
+4. 对每条轨迹截取某个中间状态
+5. 发给教师模型，让教师只修正下一步
+6. 把教师 next_step 转成 SFT/偏好数据
+7. 训练 Planner
+8. 再跑同类题，看工具选择和 STOP 是否改善
+```
+
+教师 prompt 应该强调：
+
+| 要求 | 原因 |
+|---|---|
+| 不要直接给最终答案 | 避免学生绕过规划 |
+| 只修正当前一步 | 保持 on-policy 状态对应 |
+| 使用已有 memory | 避免教师忽略学生当前上下文 |
+| 输出合法工具名 | 保证可执行 |
+| 说明为什么更好 | 可用于偏好数据或人工检查 |
+
+教师输入可以包含：
+
+```text
+Question:
+...
+
+Student analysis:
+...
+
+Memory so far:
+...
+
+Student next_step:
+...
+
+Tool list:
+...
+
+Please produce a better next_step only.
+```
+
+## 22. RL 问题排查的决策树
+
+如果训练没提升，按这个顺序排查：
+
+```text
+accuracy 不升
+  -> reward 有没有方差？
+      -> 没有：看是否全 0 或全 1
+      -> 有：继续
+  -> Planner 输出能解析吗？
+      -> 不能：先 SFT 格式
+      -> 能：继续
+  -> 工具调用成功吗？
+      -> 不成功：看 Executor command 和 tool_name
+      -> 成功：继续
+  -> Verifier 停止合理吗？
+      -> 过早/过晚：改 Verifier 或做 OPD STOP 数据
+      -> 合理：继续
+  -> final_output 是否正确吸收 memory？
+      -> 否：换 final_output 模型或 prompt
+      -> 是：继续
+  -> Rewarder 是否误判？
+      -> 是：加规则判分
+      -> 否：调 GRPO 超参或扩大数据
+```
+
+常见优先级：
+
+| 优先级 | 问题 | 原因 |
+|---|---|---|
+| 最高 | 格式不可解析 | 后面全断 |
+| 高 | reward 全 0 | 没有学习信号 |
+| 高 | 工具调用失败 | Agent 链路不成立 |
+| 中 | Verifier 判断差 | 影响步数和成本 |
+| 中 | final_output 格式差 | 影响 reward |
+| 低 | 小幅指标波动 | 小样本正常现象 |
+
+## 23. 面试追问：如果让你继续改进项目
+
+可以从低风险到高风险讲：
+
+| 改进方向 | 做法 | 价值 |
+|---|---|---|
+| 规则 reward | 加 sympy/数学答案 normalize | 降低 LLM judge 噪声 |
+| 更好的轨迹日志 | 统计解析失败、STOP、工具成功率 | 更容易定位问题 |
+| SFT 热启动 | 训练合法格式和工具协议 | 降低 RL 冷启动难度 |
+| OPD 数据闭环 | 教师纠偏学生失败状态 | 解决分布偏移 |
+| 工具 schema 化 | 用结构化 JSON 代替自由文本 | 降低 parser 错误 |
+| Verifier 单独训练 | 收集 STOP/CONTINUE 数据 | 降低 API 依赖 |
+| final_output 本地化 | 让 Planner 或小模型生成答案 | 更完整端到端训练 |
+
+注意面试时不要一上来就说“全都端到端训练”。更稳妥的回答是：
+
+> 我会先把当前链路中错误率最高的环节数据化，比如工具解析失败率、STOP 错误率和 Rewarder 误判率。先做可观测性和 SFT/OPD，再考虑更复杂的端到端训练。
+
+## 24. 更长的面试自我介绍版本
+
+可以这样讲一段完整项目经历：
+
+> 我做的是一个基于 slime 的 AgentFlow 复现和训练项目。系统里我把 Agent 拆成 Planner、Executor、Tool、Verifier、Rewarder 几个角色。由于本地 GPU 有限，我只把小模型 Planner 放在本地训练，其他角色默认走 OpenAI 兼容 API。一次 rollout 中，Planner 先分析题目，再根据 Memory 选择下一步工具和子目标；Executor 把它转成统一的 `tool.execute(query=...)` 调用；Tool 返回局部结果；Verifier 决定继续还是停止；最后 final_output 汇总答案，Rewarder 根据 label 给 0/1 分。训练上我用 GRPO，同一题采多条轨迹，通过组内 reward 差异优化 Planner。因为一条轨迹有多个 Planner turn，我写了 custom_convert，把 plan 和 next_step 拆成独立训练样本，并让它们共享 trajectory-level reward。为了提高冷启动稳定性，我会先考虑 SFT 让 Planner 学会工具协议，再用 OPD 在学生真实 on-policy 错误状态上让教师纠偏，最后接 GRPO 优化最终指标。

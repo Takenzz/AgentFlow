@@ -401,3 +401,103 @@ agentic/agentflow/checkpoint_eval_results.jsonl
 | RL 前后本地 Planner 结果 JSON | 主要对比 |
 | 典型成功/失败轨迹 | 用来解释机制和问题 |
 | checkpoint 曲线 | 用来说明训练稳定性 |
+
+## 13. 新手版：每一步到底在做什么
+
+如果你准备面试，不要只背命令。面试官更关心你是否知道每一步为什么存在。
+
+| 步骤 | 你在做什么 | 为什么要做 | 面试中怎么说 |
+|---|---|---|---|
+| 下载数据 | 准备训练题和评测题 | RL 需要 prompt 和 label，评测需要固定 benchmark | 我用 dapo-math 做训练，用 AIME 做相对独立评测 |
+| 下载 HF 模型 | 拿到初始 Planner | 训练必须从一个基础模型开始 | Planner 是本地小模型，负责策略决策 |
+| HF 转 torch_dist | 转成 slime/Megatron 能加载的格式 | trainer 不直接吃普通 HF checkpoint | 训练格式和推理格式不同，所以需要转换 |
+| 配置 API | 给 Executor/Verifier/Rewarder 提供能力 | 支持角色不训练，走 API 节省显存 | 我把资源集中在 Planner 上 |
+| 启动 RL | 开始采样轨迹并更新 Planner | GRPO 需要 rollout、reward、policy update | 每条题采多条轨迹，用最终 reward 优化 Planner |
+| 保存轨迹 | 记录 Agent 每一步 | 指标不够解释问题，轨迹能定位失败原因 | 我会按 analysis、tool、memory、STOP、final_output 分析 |
+| 转 HF | 把训练产物转成可推理格式 | SGLang 评测加载 HF 模型更方便 | 训练 checkpoint 和部署 checkpoint 分开 |
+| 本地评测 | 评估训练后的 Planner | 看 RL 是否提升 | 固定支持角色，只替换 Planner checkpoint |
+| API Planner 对照 | 测教师/系统上限 | 判断小 Planner 离上限还有多远 | 这是上限参考，不参与训练 |
+
+## 14. 从训练命令理解训练闭环
+
+训练命令里最重要的不是路径，而是这些变量背后的含义。
+
+```bash
+TRAIN_GPUS=4
+TRAIN_TP=1
+ROLLOUT_ENGINE_GPUS=1
+ROLLOUT_BATCH_SIZE=8
+N_SAMPLES_PER_PROMPT=8
+GLOBAL_BATCH_SIZE=64
+ROLLOUT_TEMPERATURE=0.7
+```
+
+逐个解释：
+
+| 变量 | 初学者理解 | 为什么重要 |
+|---|---|---|
+| `TRAIN_GPUS` | 有多少张卡参与训练 | 决定训练吞吐和显存资源 |
+| `TRAIN_TP` | 模型是否切到多卡 | 小模型一般不需要 TP，TP=1 更简单 |
+| `ROLLOUT_ENGINE_GPUS` | rollout 推理服务用几张卡 | rollout 需要快速采样，不能和训练资源冲突太严重 |
+| `ROLLOUT_BATCH_SIZE` | 一次拿多少道题出来采样 | 太大容易 OOM，太小吞吐低 |
+| `N_SAMPLES_PER_PROMPT` | 每道题采几条轨迹 | GRPO 依赖同题多样本比较 |
+| `GLOBAL_BATCH_SIZE` | trainer 一次更新的全局样本量 | 影响稳定性和显存 |
+| `ROLLOUT_TEMPERATURE` | Planner 输出的随机性 | 太低没有探索，太高格式容易乱 |
+
+面试官如果问“为什么 GRPO 要 `N_SAMPLES_PER_PROMPT`”，可以回答：
+
+> GRPO 不训练单独的 value model，而是对同一道题采多条 trajectory，用这一组里面 reward 的相对高低估计 advantage。所以每个 prompt 至少要有多个样本，否则组内比较没有意义。
+
+## 15. 训练日志应该看什么
+
+很多新手只会看 loss，但 Agent RL 里只看 loss 不够。你应该同时看三类东西。
+
+### 15.1 系统是否正常
+
+| 日志现象 | 说明 |
+|---|---|
+| Ray dashboard ready | Ray 启动成功 |
+| SGLang server ready | Planner rollout 服务启动成功 |
+| API completion failed retry | API 调用不稳定，但有重试 |
+| CUDA OOM | 显存参数太激进 |
+| Command parse error | 工具调用格式有问题 |
+
+### 15.2 训练是否有学习信号
+
+| 现象 | 解释 |
+|---|---|
+| reward 全 0 | Planner 基本答不对，GRPO 信号弱 |
+| reward 全 1 | 任务太简单或 judge 有问题 |
+| 同组 reward 有 0 有 1 | 对 GRPO 最有价值 |
+| KL 持续变大 | 策略偏离参考模型太多 |
+| response length 爆炸 | 模型可能开始冗长或循环 |
+
+### 15.3 Agent 行为是否合理
+
+| 轨迹现象 | 解释 |
+|---|---|
+| 第一步工具选错 | Planner 策略问题 |
+| 工具结果正确但 final 错 | final_output 整合问题 |
+| 工具命令解析失败 | Executor 或 Planner 格式问题 |
+| 过早 STOP | Verifier 或 Planner 停止判断问题 |
+| 一直 CONTINUE | 停止意识弱，成本高 |
+
+## 16. 面试中如何解释“训练前后对比”
+
+不要只说“accuracy 从 A 到 B”。更好的说法是拆成三个层次：
+
+1. 指标层：AIME accuracy 是否提升。
+2. 轨迹层：成功样本中工具选择是否更合理、平均步数是否下降、STOP 是否更准确。
+3. 错误层：失败样本主要还剩什么问题，比如 reward 噪声、工具解析、final_output 汇总。
+
+可以这样说：
+
+> 我不会只看最终准确率，因为 Agent 系统的错误可能来自 Planner、Executor、Verifier、工具或 Rewarder。我的对比方式是固定支持角色，只替换 Planner checkpoint，然后比较 accuracy、平均 step、工具解析失败率、过早 STOP 比例和典型轨迹。这样更能说明训练是否真的改善了 Planner 的调度能力。
+
+## 17. 如果只能讲三分钟，训练流程怎么讲
+
+三分钟版本：
+
+> 我先准备数学训练集和评测集，把 Qwen2.5 1.5B 这类小模型作为本地 Planner，并转换成 slime/Megatron 训练格式。训练时，slime 调用自定义 `rollout.generate()`，让 Planner 对每道题生成多步 agent 轨迹。每一步 Planner 根据题目和 Memory 选择工具，Executor 把它转成工具调用，工具结果写回 Memory，Verifier 判断是否继续。最后 final_output 只汇总 Memory 中已有工具结果生成答案，Rewarder 根据 label 给 0/1 reward。GRPO 对同一题的多条轨迹做组内 reward normalization，`custom_convert` 再把一条多轮轨迹拆成多个 Planner turn 来更新模型。训练后我把 checkpoint 转回 HF，用同一套评测脚本对比原始 Planner、RL Planner 和 API Planner 上限。
+
+这个版本可以先背熟，再根据面试官追问展开。
