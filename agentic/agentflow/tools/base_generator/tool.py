@@ -10,31 +10,65 @@ TOOL_DESCRIPTION = """
 A constrained local reasoning tool. It can derive one narrow math relation,
 identify one relevant theorem, or check one small logical transformation.
 It must not solve the full original problem, compute the final answer, or
-produce a full step-by-step solution.
+produce a full step-by-step solution. The planner must provide the local
+question; the tool should not choose the overall strategy.
 """
 
 TOOL_DEMO_COMMANDS = {
     "command": (
-        'execution = tool.execute(query="""Given a triangle with circumradius R and '
-        'inradius r, state the standard formula for OI^2 only.""")'
+        'execution = tool.execute(query="""State one local relationship requested '
+        'by the planner, using only the supplied variables and assumptions.""")'
     ),
-    "description": "Derive one local identity or theorem needed by the Planner.",
+    "description": "Derive one local identity, relation, or check needed by the Planner.",
 }
 
 
 _BROAD_REQUEST_PATTERNS = [
     r"\bsolve\s+(?:the|this)\s+(?:problem|question)\b",
+    r"\banswer\s+(?:the|this)\s+(?:problem|question)\b",
     r"\bcomplete\s+(?:solution|proof)\b",
     r"\bfull\s+(?:solution|proof)\b",
+    r"\b(?:entire|whole)\s+(?:solution|proof|derivation)\b",
     r"\bfinal\s+answer\b",
+    r"\b(?:produce|give|return)\b.{0,60}\banswer\b",
     r"\bboxed\s*\{",
-    r"\b(find|calculate|compute|determine)\b.{0,80}\b(product\s+of\b|ab\s*(?:\\cdot|\*|and)\s*ac\b)",
+    r"\b(?:find|calculate|compute|determine)\b.{0,80}\b(?:the\s+)?(?:answer|final\s+value|requested\s+value|target\s+quantity)\b",
+]
+
+_LOCAL_REQUEST_MARKERS = [
+    "identity",
+    "lemma",
+    "relation",
+    "relationship",
+    "theorem",
+    "derive",
+    "state",
+    "verify",
+    "check",
+    "transform",
+    "equivalence",
+    "necessary condition",
+    "sufficient condition",
+    "local",
 ]
 
 
 def _looks_like_full_solution_request(query: str) -> bool:
     normalized = " ".join(query.lower().split())
-    return any(re.search(pattern, normalized) for pattern in _BROAD_REQUEST_PATTERNS)
+    if any(re.search(pattern, normalized) for pattern in _BROAD_REQUEST_PATTERNS):
+        return True
+
+    has_local_marker = any(marker in normalized for marker in _LOCAL_REQUEST_MARKERS)
+    broad_target = re.search(
+        r"\b(?:find|calculate|compute|determine|count)\b.{0,120}\b(?:number|value|sum|probability|least|greatest|maximum|minimum)\b",
+        normalized,
+    )
+    # Long target-shaped requests without a local-reasoning marker are usually
+    # copied from the original problem and should be narrowed by the planner.
+    if broad_target and not has_local_marker and len(normalized) > 260:
+        return True
+
+    return False
 
 
 class Base_Generator_Tool(BaseTool):
@@ -69,6 +103,7 @@ Strict limits:
 - Do not produce a boxed answer.
 - Do not write a long tutorial or multi-stage proof.
 - If the user request is too broad, return NEEDS_SMALLER_SUBGOAL with one sentence explaining the missing narrower target.
+- If the request asks you to choose the overall strategy or produce the target answer, return NEEDS_SMALLER_SUBGOAL.
 
 Return format:
 LOCAL_RESULT: <one local result>

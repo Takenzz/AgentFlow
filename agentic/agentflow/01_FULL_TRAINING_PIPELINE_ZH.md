@@ -22,16 +22,18 @@
 | 模块 | 默认部署 | 是否被训练 | 说明 |
 |---|---|---:|---|
 | Planner | 本地 SGLang + slime | 是 | 产生 analysis 和 next_step，是 RL 优化目标 |
-| Executor | API | 否 | 把 Planner 的工具选择转成可执行命令 |
-| Local_Math_Deduction_Tool | API | 否 | 只推导一个局部数学关系，不负责完整解题 |
-| python_coder | API | 否 | 只做明确的局部计算/符号检查 |
-| Verifier | API | 否 | 判断当前 memory 是否足够，给出 STOP/CONTINUE |
-| final_output | API | 否 | 只汇总 Memory 中已有工具结果，信息不足时输出不足 |
+| Executor | API | 否 | 把 Planner 的工具选择转成稳定的 `tool.execute(query=...)` 命令 |
+| Local_Math_Deduction_Tool | API | 否 | 只推导一个局部数学关系，不负责完整解题；过宽请求返回 `NEEDS_SMALLER_SUBGOAL` |
+| Python_Code_Generator_Tool | API | 否 | 只做明确输入、约束和输出的局部计算/枚举/符号检查；过宽请求返回 `NEEDS_NUMERIC_SUBGOAL` |
+| Verifier | API | 否 | 判断当前 memory 是否足够，给出 STOP/CONTINUE；遇到错误、拒绝或矛盾结果时应继续 |
+| final_output | API | 否 | 只汇总 Memory 中已有可靠结果，信息不足或结果矛盾时输出不足 |
 | Rewarder | API | 否 | 判断最终答案是否等价于 label |
 
 注意：Planner API 模式只适合评测或教师上限对照。RL 训练必须让本地 Planner 返回 token、logprob 和 loss mask，否则无法回传梯度。
 
-工具边界很重要：Planner 只负责拆步骤和选择工具，不能在 `analysis` 或 `next_step` 中直接解题；`Local_Math_Deduction_Tool` 只能回答一个局部定理、恒等式或关系；`Python_Code_Generator_Tool` 只能执行明确计算；`final_output` 只能汇总 Memory 里已有的工具结果，不能重新解题。未知工具名不会再自动兜底到 base_generator，这样 Planner 的工具选择错误会暴露在轨迹里，便于 SFT/OPD/RL 修正。只有评测旧 checkpoint 时，才建议临时设置 `AGENTFLOW_ALLOW_TOOL_ALIASES=true` 兼容旧工具名。
+工具边界很重要：Planner 只负责拆步骤和选择工具，不能在 `analysis` 或 `next_step` 中直接解题；`Local_Math_Deduction_Tool` 只能回答一个局部定理、恒等式、关系或一致性检查；`Python_Code_Generator_Tool` 只能执行已经给清楚输入、约束和输出要求的局部计算。`final_output` 只能汇总 Memory 里已有的可靠工具结果，不能重新解题，也不能自行修复矛盾工具结果。未知工具名不会再自动兜底到 base_generator，这样 Planner 的工具选择错误会暴露在轨迹里，便于 SFT/OPD/RL 修正。只有评测旧 checkpoint 时，才建议临时设置 `AGENTFLOW_ALLOW_TOOL_ALIASES=true` 兼容旧工具名。
+
+这套边界的目标是放大 planner gap：强 Planner 应该能给出更窄、更可执行、更少重复的 sub-goal；弱 Planner 会更频繁得到 `NEEDS_SMALLER_SUBGOAL`、`NEEDS_NUMERIC_SUBGOAL`、解析失败或过早 STOP，从而形成更清晰的 OPD/RL 学习信号。
 
 ## 2. 环境准备
 
@@ -372,6 +374,8 @@ agentic/agentflow/checkpoint_eval_results.jsonl
 | 平均 step 数 | 判断是否过度规划 |
 | STOP 比例 | 判断 Verifier 是否过早停止 |
 | 工具调用解析失败率 | 判断 Planner/Executor 格式是否稳定 |
+| `NEEDS_*_SUBGOAL` 比例 | 判断 Planner 是否仍在发过宽工具请求 |
+| broad query 恢复率 | 判断 Planner 收到拒绝后能否改写成更小的局部任务 |
 | final_output 无 `\boxed{}` 比例 | 判断答案格式稳定性 |
 
 ## 11. 推荐实验顺序

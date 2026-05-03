@@ -18,7 +18,7 @@ slime 提供了灵活的自定义 `generate` 函数与 reward 函数接口，使
 问题输入
   │
   ▼
-Planner.plan()          ← 分析问题，制定解题思路（loss_mask=1，参与训练）
+Planner.plan()          ← 分析目标，制定通用拆解与调度策略（loss_mask=1，参与训练）
   │
   └─► for step in range(max_steps):
         │
@@ -38,8 +38,8 @@ Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground
 
 | 工具名 | 描述 |
 |---|---|
-| `base_generator` | 通用文本生成工具，基于 LLM 直接回答子任务 |
-| `python_coder` | Python 代码生成与执行工具，用于数学计算、算法求解等 |
+| `Local_Math_Deduction_Tool` | 只回答一个局部关系、定理、转换或一致性检查；拒绝完整解题请求 |
+| `Python_Code_Generator_Tool` | 只执行明确给定输入、约束和输出要求的局部计算、枚举或符号检查 |
 
 #### 实验结果
 

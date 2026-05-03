@@ -31,8 +31,9 @@ Instructions:
 2.  Judge sufficiency using only facts, formulas, computations, and intermediate values already present in Memory.
 3.  Do NOT solve the problem yourself, derive new formulas, perform arithmetic, or fill in missing reasoning.
 4.  If Memory contains a tool error, an unknown tool, NEEDS_SMALLER_SUBGOAL, NEEDS_NUMERIC_SUBGOAL, or an incomplete local result, conclude CONTINUE.
-5.  Conclude STOP only when Memory already contains enough reliable tool results for final_output to synthesize the answer without new reasoning or calculation.
-6.  If more information is needed, name the smallest missing local sub-goal and the tool type that could provide it.
+5.  If Memory contains contradictory results for the same target, conclude CONTINUE unless another tool result explicitly resolves the contradiction.
+6.  Conclude STOP only when Memory already contains one reliable final candidate, or all required intermediate values plus an explicit recorded computation of the requested final quantity.
+7.  If more information is needed, name the smallest missing local sub-goal and the tool type that could provide it.
 
 Final Determination:
 -   If Memory is sufficient, explain why and conclude with "Conclusion: STOP".

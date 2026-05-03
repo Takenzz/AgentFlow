@@ -15,6 +15,62 @@ _DANGEROUS_CALLS = ["exit", "quit", "sys.exit", "os._exit"]
 
 _MAX_OUTPUT_LENGTH = 4000
 
+_BROAD_NUMERIC_PATTERNS = [
+    r"\bsolve\s+(?:the|this)\s+(?:problem|question)\b",
+    r"\banswer\s+(?:the|this)\s+(?:problem|question)\b",
+    r"\bcomplete\s+(?:solution|proof)\b",
+    r"\bfull\s+(?:solution|proof)\b",
+    r"\bfinal\s+answer\b",
+    r"\b(?:produce|give|return)\b.{0,60}\banswer\b",
+    r"\bboxed\s*\{",
+    r"\b(?:find|calculate|compute|determine)\b.{0,80}\b(?:the\s+)?(?:answer|final\s+value|requested\s+value|target\s+quantity)\b",
+]
+
+_LOCAL_NUMERIC_MARKERS = [
+    "evaluate",
+    "simplify",
+    "factor",
+    "expand",
+    "solve the system",
+    "linear system",
+    "system of equations",
+    "expression",
+    "predicate",
+    "enumerate",
+    "iterate",
+    "brute force",
+    "range",
+    "up to",
+    "for each",
+    "modulo",
+    "print",
+    "return only",
+    "array",
+]
+
+
+def _looks_like_broad_numeric_request(query: str) -> bool:
+    normalized = " ".join(query.lower().split())
+    if any(re.search(pattern, normalized) for pattern in _BROAD_NUMERIC_PATTERNS):
+        return True
+
+    has_local_marker = any(marker in normalized for marker in _LOCAL_NUMERIC_MARKERS)
+    asks_for_target = re.search(
+        r"\b(?:find|calculate|compute|determine|count)\b.{0,140}\b(?:number|value|sum|probability|least|greatest|maximum|minimum|ways|configurations|arrangements)\b",
+        normalized,
+    )
+    asks_for_total_valid = re.search(
+        r"\b(?:total\s+number|number)\s+of\s+(?:valid\s+)?(?:ways|configurations|arrangements|solutions)\b",
+        normalized,
+    )
+
+    if asks_for_target and not has_local_marker and len(normalized) > 220:
+        return True
+    if asks_for_total_valid and not has_local_marker:
+        return True
+
+    return False
+
 # Tool name mapping - this defines the external name for this tool
 TOOL_NAME = "Python_Code_Generator_Tool"
 
@@ -35,25 +91,26 @@ For optimal results with the {TOOL_NAME}:
 TOOL_DESCRIPTION = """
 A tool that generates and executes Python code snippets for explicit local
 calculations or symbolic checks.
+The request must provide concrete inputs, constraints, and the requested
+printed output; the tool is not responsible for choosing the overall strategy.
 It returns the printed output from the executed code.
 """
 
 TOOL_DEMO_COMMANDS = [
     {
-        "command": 'execution = tool.execute(query="Calculate the factorial of 5")',
-        "description": "Generate a Python code snippet to calculate the factorial of 5.",
+        "command": 'execution = tool.execute(query="Evaluate the explicitly provided expression and print only the result.")',
+        "description": "Generate a Python code snippet for one explicit local calculation.",
     },
     {
-        "command": 'execution = tool.execute(query="Find the sum of prime numbers up to 50")',
-        "description": "Generate a Python code snippet to find the sum of prime numbers up to 50.",
+        "command": 'execution = tool.execute(query="Enumerate the explicitly provided finite domain, apply the supplied predicate, and print the count.")',
+        "description": "Generate a Python code snippet for one explicit finite enumeration.",
     },
     {
         "command": (
-            'query="Given the list [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], '
-            'calculate the sum of squares of odd numbers"\n'
+            'query="Use the supplied array, formula, and output requirement for one local computation."\n'
             "execution = tool.execute(query=query)"
         ),
-        "description": "Generate a Python function for a specific mathematical operation on a given list of numbers.",
+        "description": "Generate Python code for one fully specified local operation.",
     },
 ]
 
@@ -135,6 +192,13 @@ class Python_Coder_Tool(BaseTool):
         Never raises — all errors are returned as descriptive strings so the
         solver can continue without crashing.
         """
+        if _looks_like_broad_numeric_request(query):
+            return (
+                "NEEDS_NUMERIC_SUBGOAL: Python_Code_Generator_Tool only accepts one "
+                "explicit local calculation, enumeration, simplification, or symbolic "
+                "check. Provide the concrete inputs, constraints, and requested printed output."
+            )
+
         # Step 1: Ask the LLM to generate Python code
         try:
             system_prompt = (
@@ -143,9 +207,10 @@ class Python_Coder_Tool(BaseTool):
                 "or symbolic check, then print only the computed result.\n"
                 f"{LIMITATION}\n"
                 f"{BEST_PRACTICE}\n"
-                "Do not invent a full proof strategy for a broad math word problem. "
-                "If the request asks for a complete solution or final answer without a "
-                "clear computational sub-goal, return code that prints "
+                "Do not choose the overall mathematical strategy, invent missing constraints, "
+                "or solve a broad word problem. Only implement the explicit local operation "
+                "requested by the query. If the query lacks concrete inputs, constraints, "
+                "or a requested printed output, return code that prints "
                 "'NEEDS_NUMERIC_SUBGOAL: ask for one explicit calculation'.\n"
                 "Return ONLY a single Python code block wrapped in ```python ... ```."
             )

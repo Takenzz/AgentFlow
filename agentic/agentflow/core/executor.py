@@ -125,7 +125,8 @@ Instructions:
 8.  **IMPORTANT: Always wrap the `query` value in triple double-quotes (`\"\"\"...\"\"\"`). This prevents syntax errors from special characters or apostrophes.**
 9.  **IMPORTANT: The `query` value must be a narrow tool request derived from the Sub-Goal and Relevant Data. Do NOT copy the full original Query unless the Sub-Goal explicitly needs every part of it.**
 10. **For `Local_Math_Deduction_Tool`, ask for exactly one local identity, theorem, relationship, or short derivation. Do NOT ask it to solve the full problem or produce the final answer.**
-11. **For `Python_Code_Generator_Tool`, ask for exactly one explicit calculation, simplification, enumeration, or symbolic check. Do NOT ask it to plan a full proof.**
+11. **For `Python_Code_Generator_Tool`, ask for exactly one explicit calculation, simplification, enumeration, or symbolic check. Include the inputs, constraints, and requested printed output. Do NOT ask it to choose the strategy, plan a proof, or solve the full problem.**
+12. If the Sub-Goal is broad, preserve the narrowest executable part and omit any request for a final answer.
 
 Output Format:
 Present your response in the following structured format. Do not include any extra text or explanations.
@@ -135,16 +136,16 @@ Generated Command:
 <command>
 ```
 
-Example1:
+Format Example for a reasoning-tool local request:
 Generated Command:
 ```python
-execution = tool.execute(query=\"\"\"Calculate the factorial of 10\"\"\")
+execution = tool.execute(query=\"\"\"State the one local relationship requested in the Sub-Goal, using only the supplied variables and assumptions.\"\"\")
 ```
 
-Example2:
+Format Example for a computation-tool local request:
 Generated Command:
 ```python
-execution = tool.execute(query=\"\"\"Find the number of intersections of y = 4*g(f(sin(2*pi*x))) and x = 4*g(f(cos(3*pi*y))), where f(x)=|x|-0.5 and g(x)=|x|-0.25\"\"\")
+execution = tool.execute(query=\"\"\"Evaluate the explicit local calculation supplied in Relevant Data and print only the requested result.\"\"\")
 ```
 """
         messages = [{"role": "user", "content": prompt_generate_tool_command}]

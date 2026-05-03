@@ -87,9 +87,9 @@ Inputs:
 
 Instructions:
 1. Identify the final target and the information explicitly given.
-2. List the likely kinds of intermediate sub-goals, such as "derive one relation", "compute one value", or "verify one condition".
-3. Mention which available tool type is suitable for each kind of sub-goal.
-4. Do NOT solve the problem, derive formulas, perform arithmetic, or guess the final answer.
+2. Describe the decomposition policy in generic terms: what kind of local result should be collected first, what kind of local computation/check may follow, and what evidence is needed before stopping.
+3. Mention which available tool type is suitable for each kind of local operation.
+4. Do NOT solve the problem, derive domain-specific formulas, perform arithmetic, choose a final answer, or include answer-seeking content.
 5. Keep this as a routing/planning note, not a solution.
 
 Keep the entire response concise and under 250 words.
@@ -124,9 +124,11 @@ Context:
 
 Instructions:
 1. Select exactly one available tool for the next atomic step.
-2. Create one narrow Sub-Goal that the selected tool can complete in one call.
-3. Provide all necessary **context** (data, file names, variables) for the tool to function.
-4. If a previous tool result is broad, refused, or unusable, create a smaller sub-goal instead of repeating the same request.
+2. Create one narrow Sub-Goal that the selected tool can complete in one call without choosing the overall solution strategy.
+3. Provide all necessary **context**: explicit data already known, variables already introduced, prior local results to use, and the exact output expected from this call.
+4. For a reasoning tool, request one local identity, relationship, transformation, or consistency check.
+5. For a computation tool, request one explicit calculation, simplification, enumeration, or symbolic check with enough inputs and constraints that the tool does not need to infer the method.
+6. If a previous tool result is broad, refused, contradictory, or unusable, create a smaller sub-goal instead of repeating the same request.
 
 Response Format:
 Justification: <one concise sentence about why this tool is next>
@@ -137,6 +139,8 @@ Tool Name: <exactly one name from Available Tools>
 Rules:
 - Select only ONE tool.
 - The Tool Name must exactly match one of the Available Tools.
+- Do not ask any tool for the final answer, a complete solution, or a broad strategy.
+- Do not copy the full original query into the Sub-Goal; include only the data needed for this local operation.
 - Output only the four response-format lines above. No numbering, Markdown bullets, or extra sections.
 
 """
@@ -168,10 +172,10 @@ Context:
 
 Instructions:
 1. Use the original query only to understand what answer format is requested.
-2. Use only facts, formulas, computations, and intermediate values that appear in Actions Taken.
-3. Do NOT introduce new derivations, unstated theorems, arithmetic, or calculations at this final stage.
-4. If Actions Taken do not contain enough information to support a final answer, say so briefly and end with \\boxed{{INSUFFICIENT_TOOL_RESULTS}}.
-5. If the tool results are sufficient, produce a concise final synthesis and end with the final answer enclosed in \\boxed{{}}. For example: \\boxed{{42}}.
+2. Use only final candidates, facts, formulas, computations, and intermediate values that explicitly appear in Actions Taken.
+3. Do NOT introduce new derivations, unstated theorems, missing arithmetic, consistency repair, or independent problem solving at this final stage.
+4. Do NOT correct a tool result using your own reasoning. If the Actions Taken are contradictory, incomplete, or require any new calculation, end with \\boxed{{INSUFFICIENT_TOOL_RESULTS}}.
+5. If Actions Taken contain one reliable final candidate already supported by the recorded local results, produce a concise synthesis and end with that value enclosed in \\boxed{{}}.
 """
         messages = [{"role": "user", "content": prompt_generate_final_output}]
         engine = llm_engine if llm_engine is not None else self.llm_engine

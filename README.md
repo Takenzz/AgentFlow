@@ -22,7 +22,7 @@ Reproduces the core idea of [AgentFlow](https://arxiv.org/abs/2510.05592): exten
 Input question
   │
   ▼
-Planner.plan()              ← Analyze the problem and devise a solution strategy (loss_mask=1)
+Planner.plan()              ← Analyze the target and define a generic decomposition policy (loss_mask=1)
   │
   └─► for step in range(max_steps):
         │
@@ -43,8 +43,8 @@ Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with gr
 
 | Tool | Description |
 |---|---|
-| `base_generator` | General-purpose text generation tool; answers sub-tasks directly via LLM |
-| `python_coder` | Python code generation and execution tool for math computation and algorithmic problem solving |
+| `Local_Math_Deduction_Tool` | Answers one local relation, theorem, transformation, or consistency check; rejects full-solution requests |
+| `Python_Code_Generator_Tool` | Executes one explicit local calculation, enumeration, or symbolic check with concrete inputs and output requirements |
 
 #### Results
 
