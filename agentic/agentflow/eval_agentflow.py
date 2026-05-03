@@ -309,9 +309,9 @@ async def run_eval(
                          对应 rollout.py 里的 coder_engine（固定 30001 端口）
 
     当 ``use_api_for_non_planner=True`` 时，除 Planner 外的 engine
-    （executor / verifier / base_generator / python_coder / final_output / rewarder）
+    （executor / verifier / base_generator / python_coder / rewarder）
     全部切换为 OpenAI 兼容的远程 API 调用（APIEngine），Planner 保持 SGLangEngine
-    以便评测被训练的模型本身。
+    以便评测被训练的模型本身。final_output 是确定性抽取器，不走模型。
     """
     # 确保 slime http_utils 的全局 AsyncClient 已经初始化
     # （训练链路由框架代为初始化；eval 必须手动触发）
@@ -344,7 +344,7 @@ async def run_eval(
         )
 
     if use_api_for_non_planner:
-        # Executor / base_generator / verifier / final_output 全部走 API
+        # Executor / base_generator / verifier 全部走 API；final_output 是确定性抽取器
         executor_engine = APIEngine(
             url=executor_url,
             tokenizer=tokenizer,
@@ -413,7 +413,6 @@ async def run_eval(
         "verifier":       executor_engine,
         "base_generator": executor_engine,
         "python_coder":   coder_engine,
-        "final_output":   executor_engine,  # 与训练保持一致：最终答案始终由 base 模型生成
     }
 
     solver = Solver(
@@ -457,7 +456,7 @@ def parse_args() -> argparse.Namespace:
     # Planner connection (local SGLang or OpenAI-compatible API)
     # Corresponds to the three engines in rollout.py:
     #   planner_url   -> engine          (sglang_router / main model)
-    #   executor_url  -> generate_engine (executor / verifier / base_generator / final_output)
+    #   executor_url  -> generate_engine (executor / verifier / base_generator)
     #   coder_url     -> coder_engine    (python_coder)
     srv_grp = p.add_argument_group("Planner connection")
     srv_grp.add_argument("--planner-backend", choices=["sglang", "api"], default="sglang",
@@ -500,11 +499,11 @@ def parse_args() -> argparse.Namespace:
     api_grp = p.add_argument_group("API for non-planner engines")
     api_grp.add_argument("--use-api-for-non-planner", action="store_true",
                          help="Route executor / verifier / base_generator / "
-                              "python_coder / final_output / rewarder to an "
+                              "python_coder / rewarder to an "
                               "OpenAI-compatible API instead of SGLang.")
     api_grp.add_argument("--executor-api-base", default=None,
                          help="OpenAI-compatible base_url for executor/verifier/"
-                              "base_generator/final_output (e.g. https://api.openai.com/v1)")
+                              "base_generator (e.g. https://api.openai.com/v1)")
     api_grp.add_argument("--executor-api-key",  default=None,
                          help="API key for executor API (env OPENAI_API_KEY "
                               "fallback if not provided)")
@@ -639,7 +638,7 @@ def main() -> None:
         executor_url = args.executor_api_base
         coder_url    = args.coder_api_base or args.executor_api_base
         logger.info("Non-planner engines will use OpenAI-compatible API:")
-        logger.info("  executor/verifier/base_gen/final_output -> %s (model=%s)",
+        logger.info("  executor/verifier/base_gen              -> %s (model=%s)",
                     executor_url, args.executor_model)
         logger.info("  python_coder                            -> %s (model=%s)",
                     coder_url, args.coder_model or args.executor_model)

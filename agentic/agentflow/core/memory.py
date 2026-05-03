@@ -21,5 +21,10 @@ class Memory:
             'result': result_str,
         }
 
+    def set_action_conclusion(self, step_count: int, conclusion: str) -> None:
+        key = f"Action Step {step_count}"
+        if key in self.actions:
+            self.actions[key]["verifier_conclusion"] = str(conclusion)
+
     def get_actions(self) -> dict[str, dict[str, Any]]:
         return self.actions

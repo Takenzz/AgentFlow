@@ -32,8 +32,9 @@ Instructions:
 3.  Do NOT solve the problem yourself, derive new formulas, perform arithmetic, or fill in missing reasoning.
 4.  If Memory contains a tool error, an unknown tool, NEEDS_SMALLER_SUBGOAL, NEEDS_NUMERIC_SUBGOAL, or an incomplete local result, conclude CONTINUE.
 5.  If Memory contains contradictory results for the same target, conclude CONTINUE unless another tool result explicitly resolves the contradiction.
-6.  Conclude STOP only when Memory already contains one reliable final candidate, or all required intermediate values plus an explicit recorded computation of the requested final quantity.
-7.  If more information is needed, name the smallest missing local sub-goal and the tool type that could provide it.
+6.  Conclude STOP only when Memory contains one unique successful computation step whose Planner Sub-Goal is a narrow final aggregation over recorded intermediate values.
+7.  If all required intermediate values are present but no final aggregation computation exists, conclude CONTINUE and ask for one narrow computation-tool aggregation step. The tool should only compute the specified value; it should not decide global sufficiency.
+8.  If more information is needed, name the smallest missing local sub-goal and the tool type that could provide it.
 
 Final Determination:
 -   If Memory is sufficient, explain why and conclude with "Conclusion: STOP".

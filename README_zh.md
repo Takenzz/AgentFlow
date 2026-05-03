@@ -28,7 +28,7 @@ Planner.plan()          ← 分析目标，制定通用拆解与调度策略（l
         └─ Memory.add_action()            ← 记录执行结果
   │
   ▼
-Planner.generate_final_output()  ← 汇总结果，输出最终答案（loss_mask=0）
+Planner.generate_final_output()  ← 确定性抽取 Planner 标记的 final aggregation（loss_mask=0）
   │
   ▼
 Rewarder.compute_reward()        ← LLM-as-Judge，对比模型答案与 ground truth

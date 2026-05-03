@@ -1,5 +1,6 @@
 import importlib.util
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import List
@@ -102,6 +103,159 @@ Keep the entire response concise and under 250 words.
         messages = [{"role": "user", "content": planning_prompt}]
         return await self.llm_engine.generate(messages)
 
+    @staticmethod
+    def _is_final_aggregation_action(action: dict) -> bool:
+        """Whether the Planner marked this step as the narrow final aggregation.
+
+        Tools only perform local work. The global decision that a local
+        calculation is the final aggregation must come from the Planner's
+        sub-goal and executor command, not from tool-emitted text.
+        """
+        tool_name = str(action.get("tool_name", "")).strip()
+        if tool_name != "Python_Code_Generator_Tool":
+            return False
+
+        text = " ".join(
+            [
+                str(action.get("sub_goal", "")),
+                str(action.get("command", "")),
+            ]
+        ).lower()
+        final_markers = [
+            "final aggregation",
+            "final value",
+            "requested final value",
+            "final target",
+            "final requested value",
+        ]
+        local_markers = [
+            "using only",
+            "supplied",
+            "recorded",
+            "previous",
+            "intermediate",
+            "relevant data",
+        ]
+        broad_markers = [
+            "original problem",
+            "original query",
+            "entire problem",
+            "whole problem",
+            "full solution",
+            "solve from scratch",
+        ]
+        return (
+            any(marker in text for marker in final_markers)
+            and any(marker in text for marker in local_markers)
+            and not any(marker in text for marker in broad_markers)
+        )
+
+    @staticmethod
+    def _extract_computed_result(result: str) -> str:
+        match = re.search(r"COMPUTED_RESULT:\s*(.*)", result, re.DOTALL)
+        if not match:
+            return ""
+        body = match.group(1).strip()
+        body = re.split(r"\n(?:TOOL_STATUS|LOCAL_RESULT|ASSUMPTIONS|LIMITS|NEXT_NEEDED):", body, maxsplit=1)[0].strip()
+        return body
+
+    @staticmethod
+    def has_successful_planner_marked_final_aggregation(memory: Memory) -> bool:
+        for action in memory.get_actions().values():
+            result = str(action.get("result", ""))
+            if (
+                "TOOL_STATUS: OK" in result
+                and Planner._is_final_aggregation_action(action)
+                and Planner._last_nonempty_line(Planner._extract_computed_result(result))
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _last_nonempty_line(text: str) -> str:
+        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+        return lines[-1] if lines else ""
+
+    @staticmethod
+    def _extract_final_aggregation_candidates(memory: Memory) -> tuple[list[tuple[str, int]], bool]:
+        """Return final aggregation results and later blocking status.
+
+        The final answer stage is deterministic and only trusts a successful
+        computation result when the step is explicitly marked by the Planner as
+        a narrow final aggregation over recorded intermediate values, and the
+        Verifier has issued STOP at or after that step.
+        """
+        candidates: list[tuple[str, int]] = []
+        blocking_after_last_candidate = False
+
+        actions = list(memory.get_actions().items())
+        stop_indices = [
+            idx
+            for idx, (_, action) in enumerate(actions)
+            if str(action.get("verifier_conclusion", "")).strip().upper() == "STOP"
+        ]
+        last_stop_index = max(stop_indices) if stop_indices else -1
+        last_candidate_index = -1
+        for idx, (_, action) in enumerate(actions):
+            result = str(action.get("result", ""))
+            if "TOOL_STATUS: OK" not in result:
+                continue
+            if not Planner._is_final_aggregation_action(action):
+                continue
+            if last_stop_index < idx:
+                continue
+
+            computed = Planner._extract_computed_result(result)
+            candidate = Planner._last_nonempty_line(computed)
+            candidate = re.sub(r"\\boxed\{([^{}]+)\}", r"\1", candidate).strip()
+            if candidate and candidate.upper() not in {"NONE", "UNKNOWN", "INSUFFICIENT_TOOL_RESULTS"}:
+                candidates.append((candidate, idx))
+                last_candidate_index = idx
+
+        if last_candidate_index >= 0:
+            for _, action in actions[last_candidate_index + 1:]:
+                result = str(action.get("result", ""))
+                if (
+                    "NEEDS_SMALLER_SUBGOAL" in result
+                    or "NEEDS_NUMERIC_SUBGOAL" in result
+                    or "TOOL_STATUS: ERROR" in result
+                    or "Execution error:" in result
+                    or "Code generation error:" in result
+                    or "Command parse error" in result
+                    or "Tool load error" in result
+                ):
+                    blocking_after_last_candidate = True
+                    break
+
+        return candidates, blocking_after_last_candidate
+
+    @staticmethod
+    def _deterministic_final_response(memory: Memory) -> str:
+        candidates, blocking_after_last_candidate = Planner._extract_final_aggregation_candidates(memory)
+        unique_candidates = []
+        for candidate, _ in candidates:
+            if candidate not in unique_candidates:
+                unique_candidates.append(candidate)
+
+        if len(unique_candidates) == 1 and not blocking_after_last_candidate:
+            candidate = unique_candidates[0]
+            return (
+                "The memory contains a unique Planner-marked final aggregation result. "
+                "No additional derivation is performed.\n\n"
+                f"\\boxed{{{candidate}}}"
+            )
+
+        reason = "no successful Planner-marked final aggregation"
+        if len(unique_candidates) > 1:
+            reason = "multiple conflicting final aggregation values"
+        elif blocking_after_last_candidate:
+            reason = "a blocking tool result appears after the last final aggregation"
+
+        return (
+            f"The tool memory is insufficient for deterministic final extraction: {reason}.\n\n"
+            "\\boxed{INSUFFICIENT_TOOL_RESULTS}"
+        )
+
     def _build_next_step_content(
         self,
         query: str,
@@ -128,7 +282,9 @@ Instructions:
 3. Provide all necessary **context**: explicit data already known, variables already introduced, prior local results to use, and the exact output expected from this call.
 4. For a reasoning tool, request one local identity, relationship, transformation, or consistency check.
 5. For a computation tool, request one explicit calculation, simplification, enumeration, or symbolic check with enough inputs and constraints that the tool does not need to infer the method.
-6. If a previous tool result is broad, refused, contradictory, or unusable, create a smaller sub-goal instead of repeating the same request.
+6. When all necessary intermediate results are already in Previous Steps, request one narrow final aggregation from the computation tool. The Sub-Goal must say it is a final aggregation over recorded intermediate values and ask the tool to print only the requested final value.
+7. If Previous Steps contains `verifier_conclusion: CONTINUE_FINAL_AGGREGATION_REQUIRED`, the next step must be that narrow Python final aggregation over recorded values.
+8. If a previous tool result is broad, refused, contradictory, or unusable, create a smaller sub-goal instead of repeating the same request.
 
 Response Format:
 Justification: <one concise sentence about why this tool is next>
@@ -139,8 +295,9 @@ Tool Name: <exactly one name from Available Tools>
 Rules:
 - Select only ONE tool.
 - The Tool Name must exactly match one of the Available Tools.
-- Do not ask any tool for the final answer, a complete solution, or a broad strategy.
+- Do not ask any tool for a complete solution or broad strategy; the only allowed final-target request is a narrow final aggregation from recorded intermediate results.
 - Do not copy the full original query into the Sub-Goal; include only the data needed for this local operation.
+- Do not ask the tool to decide whether its result is globally final; only ask it to compute the local final aggregation you specify.
 - Output only the four response-format lines above. No numbering, Markdown bullets, or extra sections.
 
 """
@@ -161,22 +318,22 @@ Rules:
 
     async def generate_final_output(
         self, query_analysis: str, question: str, memory: Memory, llm_engine=None
-    ) -> str:
-        prompt_generate_final_output = f"""
-Task: Generate the final answer from the accumulated tool results only.
-
-Context:
-- **Query:** {question}
-- **Planning Brief:** {query_analysis}
-- **Actions Taken:** {memory.get_actions()}
-
-Instructions:
-1. Use the original query only to understand what answer format is requested.
-2. Use only final candidates, facts, formulas, computations, and intermediate values that explicitly appear in Actions Taken.
-3. Do NOT introduce new derivations, unstated theorems, missing arithmetic, consistency repair, or independent problem solving at this final stage.
-4. Do NOT correct a tool result using your own reasoning. If the Actions Taken are contradictory, incomplete, or require any new calculation, end with \\boxed{{INSUFFICIENT_TOOL_RESULTS}}.
-5. If Actions Taken contain one reliable final candidate already supported by the recorded local results, produce a concise synthesis and end with that value enclosed in \\boxed{{}}.
-"""
-        messages = [{"role": "user", "content": prompt_generate_final_output}]
-        engine = llm_engine if llm_engine is not None else self.llm_engine
-        return await engine.generate(messages)
+    ) -> GenerationOutput:
+        prompt_text = (
+            "DETERMINISTIC_FINAL_OUTPUT_EXTRACTOR\n"
+            "Rule: output a final answer only when Actions Taken contain exactly one "
+            "successful Planner-marked final aggregation result, a Verifier STOP at or after it, "
+            "and no later blocking tool result.\n"
+            f"Query: {question}\n"
+            f"Planning Brief: {query_analysis}\n"
+            f"Actions Taken: {memory.get_actions()}\n"
+        )
+        response = self._deterministic_final_response(memory)
+        return GenerationOutput(
+            prompt_text=prompt_text,
+            prompt_token_ids=[],
+            response=response,
+            token_ids=[],
+            log_probs=[],
+            finish_reason="stop",
+        )

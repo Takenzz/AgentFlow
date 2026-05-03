@@ -81,9 +81,17 @@ class Base_Generator_Tool(BaseTool):
         )
         self.llm_engine = llm_engine
 
+    @staticmethod
+    def _format_result(status: str, body: str) -> str:
+        body = str(body).strip()
+        if status == "OK":
+            return f"TOOL_STATUS: OK\nLOCAL_RESULT:\n{body}"
+        return f"TOOL_STATUS: {status}\nLOCAL_RESULT:\n{body}"
+
     async def execute(self, query: str) -> str:
         if _looks_like_full_solution_request(query):
-            return (
+            return self._format_result(
+                "NEEDS_SMALLER_SUBGOAL",
                 "NEEDS_SMALLER_SUBGOAL: Local_Math_Deduction_Tool only accepts one "
                 "narrow lemma, identity, or local transformation. Rewrite the request "
                 "as a specific intermediate relation instead of asking for the final answer."
@@ -116,4 +124,7 @@ NEXT_NEEDED: <the next local quantity or check, if any>
             {"role": "user", "content": query},
         ]
         out = await self.llm_engine.generate(messages)
-        return out.response
+        response = out.response.strip()
+        if "NEEDS_SMALLER_SUBGOAL" in response:
+            return self._format_result("NEEDS_SMALLER_SUBGOAL", response)
+        return self._format_result("OK", response)

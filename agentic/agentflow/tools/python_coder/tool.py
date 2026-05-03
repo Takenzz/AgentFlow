@@ -15,17 +15,6 @@ _DANGEROUS_CALLS = ["exit", "quit", "sys.exit", "os._exit"]
 
 _MAX_OUTPUT_LENGTH = 4000
 
-_BROAD_NUMERIC_PATTERNS = [
-    r"\bsolve\s+(?:the|this)\s+(?:problem|question)\b",
-    r"\banswer\s+(?:the|this)\s+(?:problem|question)\b",
-    r"\bcomplete\s+(?:solution|proof)\b",
-    r"\bfull\s+(?:solution|proof)\b",
-    r"\bfinal\s+answer\b",
-    r"\b(?:produce|give|return)\b.{0,60}\banswer\b",
-    r"\bboxed\s*\{",
-    r"\b(?:find|calculate|compute|determine)\b.{0,80}\b(?:the\s+)?(?:answer|final\s+value|requested\s+value|target\s+quantity)\b",
-]
-
 _LOCAL_NUMERIC_MARKERS = [
     "evaluate",
     "simplify",
@@ -51,7 +40,35 @@ _LOCAL_NUMERIC_MARKERS = [
 
 def _looks_like_broad_numeric_request(query: str) -> bool:
     normalized = " ".join(query.lower().split())
-    if any(re.search(pattern, normalized) for pattern in _BROAD_NUMERIC_PATTERNS):
+    has_local_scope = _query_has_local_scope(query)
+
+    hard_broad_patterns = [
+        r"\bsolve\s+(?:the|this)\s+(?:problem|question)\b",
+        r"\banswer\s+(?:the|this)\s+(?:problem|question)\b",
+        r"\bcomplete\s+(?:solution|proof)\b",
+        r"\bfull\s+(?:solution|proof)\b",
+        r"\bboxed\s*\{",
+    ]
+    if any(re.search(pattern, normalized) for pattern in hard_broad_patterns):
+        return True
+
+    broad_scope_markers = [
+        "original query",
+        "original problem",
+        "entire problem",
+        "full problem",
+        "whole problem",
+        "solve from scratch",
+    ]
+    if any(marker in normalized for marker in broad_scope_markers):
+        return True
+
+    soft_broad_patterns = [
+        r"\bfinal\s+answer\b",
+        r"\b(?:produce|give|return)\b.{0,60}\banswer\b",
+        r"\b(?:find|calculate|compute|determine)\b.{0,80}\b(?:the\s+)?(?:answer|final\s+value|requested\s+value|target\s+quantity)\b",
+    ]
+    if any(re.search(pattern, normalized) for pattern in soft_broad_patterns) and not has_local_scope:
         return True
 
     has_local_marker = any(marker in normalized for marker in _LOCAL_NUMERIC_MARKERS)
@@ -70,6 +87,21 @@ def _looks_like_broad_numeric_request(query: str) -> bool:
         return True
 
     return False
+
+
+def _query_has_local_scope(query: str) -> bool:
+    normalized = " ".join(query.lower().split())
+    local_scope_markers = [
+        "using only",
+        "supplied",
+        "given intermediate",
+        "previous result",
+        "previously computed",
+        "recorded",
+        "relevant data",
+        "intermediate value",
+    ]
+    return any(marker in normalized for marker in local_scope_markers)
 
 # Tool name mapping - this defines the external name for this tool
 TOOL_NAME = "Python_Code_Generator_Tool"
@@ -140,6 +172,11 @@ class Python_Coder_Tool(BaseTool):
         self.llm_engine = llm_engine
 
     @staticmethod
+    def _format_result(status: str, body: str) -> str:
+        body = str(body).strip()
+        return f"TOOL_STATUS: {status}\nCOMPUTED_RESULT:\n{body}"
+
+    @staticmethod
     def preprocess_code(code: str) -> str:
         """Extract the first Python code block from the LLM response.
 
@@ -193,10 +230,11 @@ class Python_Coder_Tool(BaseTool):
         solver can continue without crashing.
         """
         if _looks_like_broad_numeric_request(query):
-            return (
+            return self._format_result(
+                "NEEDS_NUMERIC_SUBGOAL",
                 "NEEDS_NUMERIC_SUBGOAL: Python_Code_Generator_Tool only accepts one "
                 "explicit local calculation, enumeration, simplification, or symbolic "
-                "check. Provide the concrete inputs, constraints, and requested printed output."
+                "check. Provide the concrete inputs, constraints, and requested printed output.",
             )
 
         # Step 1: Ask the LLM to generate Python code
@@ -212,6 +250,9 @@ class Python_Coder_Tool(BaseTool):
                 "requested by the query. If the query lacks concrete inputs, constraints, "
                 "or a requested printed output, return code that prints "
                 "'NEEDS_NUMERIC_SUBGOAL: ask for one explicit calculation'.\n"
+                "If the query is a final aggregation over supplied intermediate values, "
+                "treat it as a plain local calculation: compute only that requested value "
+                "and print it on the last stdout line. Do not assert that it is globally correct.\n"
                 "Return ONLY a single Python code block wrapped in ```python ... ```."
             )
             messages = [
@@ -223,9 +264,9 @@ class Python_Coder_Tool(BaseTool):
                 timeout=120.0,
             )
         except asyncio.TimeoutError:
-            return f"Code generation error: LLM timed out after 120s"
+            return self._format_result("ERROR", "Code generation error: LLM timed out after 120s")
         except Exception as exc:
-            return f"Code generation error: {exc}"
+            return self._format_result("ERROR", f"Code generation error: {exc}")
 
         # Step 2: Extract & sanitize code
         code = self.preprocess_code(out.response)
@@ -237,4 +278,14 @@ class Python_Coder_Tool(BaseTool):
         except Exception as exc:
             result = f"Execution error: {exc}"
 
-        return result
+        if (
+            result.startswith("Execution error:")
+            or result.startswith("Code generation error:")
+            or result.startswith("(no output)")
+            or result.startswith("(no stdout")
+            or "NEEDS_NUMERIC_SUBGOAL" in result
+        ):
+            status = "NEEDS_NUMERIC_SUBGOAL" if "NEEDS_NUMERIC_SUBGOAL" in result else "ERROR"
+            return self._format_result(status, result)
+
+        return self._format_result("OK", result)

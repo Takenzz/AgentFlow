@@ -33,7 +33,7 @@ Planner.plan()              ← Analyze the target and define a generic decompos
         └─ Memory.add_action()                       ← Record execution result
   │
   ▼
-Planner.generate_final_output()   ← Summarize results and produce final answer (loss_mask=0)
+Planner.generate_final_output()   ← Deterministically extract Planner-marked final aggregation (loss_mask=0)
   │
   ▼
 Rewarder.compute_reward()         ← LLM-as-Judge: compare model answer with ground truth

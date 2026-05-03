@@ -126,7 +126,8 @@ Instructions:
 9.  **IMPORTANT: The `query` value must be a narrow tool request derived from the Sub-Goal and Relevant Data. Do NOT copy the full original Query unless the Sub-Goal explicitly needs every part of it.**
 10. **For `Local_Math_Deduction_Tool`, ask for exactly one local identity, theorem, relationship, or short derivation. Do NOT ask it to solve the full problem or produce the final answer.**
 11. **For `Python_Code_Generator_Tool`, ask for exactly one explicit calculation, simplification, enumeration, or symbolic check. Include the inputs, constraints, and requested printed output. Do NOT ask it to choose the strategy, plan a proof, or solve the full problem.**
-12. If the Sub-Goal is broad, preserve the narrowest executable part and omit any request for a final answer.
+12. If the Sub-Goal is a narrow final aggregation from already recorded intermediate results, preserve that intent in the query and ask the tool to print exactly the requested final value on the last line. The tool should only compute the value; it should not decide whether the workflow is complete.
+13. If the Sub-Goal is broad, preserve the narrowest executable part and omit any request for a final answer.
 
 Output Format:
 Present your response in the following structured format. Do not include any extra text or explanations.
@@ -146,6 +147,12 @@ Format Example for a computation-tool local request:
 Generated Command:
 ```python
 execution = tool.execute(query=\"\"\"Evaluate the explicit local calculation supplied in Relevant Data and print only the requested result.\"\"\")
+```
+
+Format Example for a final-aggregation request:
+Generated Command:
+```python
+execution = tool.execute(query=\"\"\"Using only the intermediate values supplied in Relevant Data, compute the final aggregation requested by the Sub-Goal. Print exactly the requested final value on the last line.\"\"\")
 ```
 """
         messages = [{"role": "user", "content": prompt_generate_tool_command}]

@@ -178,8 +178,8 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
         sample.metadata = {}
     sample.metadata["original_question"] = question
 
-    # During RL only planner turns contribute to loss. All support roles use
-    # API services so four local GPUs can stay focused on small-planner training.
+    # During RL only planner turns contribute to loss. Executor, verifier, and
+    # tools use API services; final_output is deterministic extraction.
     generate_engine = _api_engine(
         tokenizer=state.tokenizer,
         sampling_params=sampling_params,
@@ -203,7 +203,6 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
             "verifier":      generate_engine,
             "base_generator": generate_engine,
             "python_coder":  coder_engine,
-            "final_output":  generate_engine,  # Always use the base model to generate the answer; excluded from training
         }
         solver = Solver(engine_map=engine_map, tools_dir=str(TOOLS_DIR), trajectory_dir=str(TRAJECTORY_DIR) if TRAJECTORY_DIR else None)
         label = str(sample.label) if sample.label is not None else None

@@ -9,7 +9,7 @@
 ```text
 训练数据 dapo-math-17k
   -> Planner 本地 rollout
-  -> Executor / Tools / Verifier / final_output API 辅助
+  -> Executor / Tools / Verifier API 辅助，final_output 确定性抽取
   -> Rewarder 判断 final_output 与 label 是否匹配
   -> slime 使用 GRPO 更新 Planner
   -> 保存 Megatron/torch_dist checkpoint
@@ -24,14 +24,14 @@
 | Planner | 本地 SGLang + slime | 是 | 产生 analysis 和 next_step，是 RL 优化目标 |
 | Executor | API | 否 | 把 Planner 的工具选择转成稳定的 `tool.execute(query=...)` 命令 |
 | Local_Math_Deduction_Tool | API | 否 | 只推导一个局部数学关系，不负责完整解题；过宽请求返回 `NEEDS_SMALLER_SUBGOAL` |
-| Python_Code_Generator_Tool | API | 否 | 只做明确输入、约束和输出的局部计算/枚举/符号检查；过宽请求返回 `NEEDS_NUMERIC_SUBGOAL` |
-| Verifier | API | 否 | 判断当前 memory 是否足够，给出 STOP/CONTINUE；遇到错误、拒绝或矛盾结果时应继续 |
-| final_output | API | 否 | 只汇总 Memory 中已有可靠结果，信息不足或结果矛盾时输出不足 |
+| Python_Code_Generator_Tool | API | 否 | 只做明确输入、约束和输出的局部计算/枚举/符号检查；过宽请求返回 `NEEDS_NUMERIC_SUBGOAL`；窄 final aggregation 也只是普通局部计算 |
+| Verifier | API | 否 | 判断当前 memory 是否足够，给出 STOP/CONTINUE；只有 Planner 已安排成功的唯一 final aggregation 才应 STOP |
+| final_output | 确定性抽取器 | 否 | 只抽取 Planner 明确标记的唯一可靠 final aggregation 结果，否则输出不足 |
 | Rewarder | API | 否 | 判断最终答案是否等价于 label |
 
 注意：Planner API 模式只适合评测或教师上限对照。RL 训练必须让本地 Planner 返回 token、logprob 和 loss mask，否则无法回传梯度。
 
-工具边界很重要：Planner 只负责拆步骤和选择工具，不能在 `analysis` 或 `next_step` 中直接解题；`Local_Math_Deduction_Tool` 只能回答一个局部定理、恒等式、关系或一致性检查；`Python_Code_Generator_Tool` 只能执行已经给清楚输入、约束和输出要求的局部计算。`final_output` 只能汇总 Memory 里已有的可靠工具结果，不能重新解题，也不能自行修复矛盾工具结果。未知工具名不会再自动兜底到 base_generator，这样 Planner 的工具选择错误会暴露在轨迹里，便于 SFT/OPD/RL 修正。只有评测旧 checkpoint 时，才建议临时设置 `AGENTFLOW_ALLOW_TOOL_ALIASES=true` 兼容旧工具名。
+工具边界很重要：Planner 只负责拆步骤和选择工具，不能在 `analysis` 或 `next_step` 中直接解题；`Local_Math_Deduction_Tool` 只能回答一个局部定理、恒等式、关系或一致性检查；`Python_Code_Generator_Tool` 只能执行已经给清楚输入、约束和输出要求的局部计算。最终答案必须由 Planner 安排一个窄的 final aggregation 工具步骤，Python tool 只计算并打印该局部结果，不判断它是否全局最终正确。`final_output` 只做确定性抽取，不能重新解题，也不能自行修复矛盾工具结果。未知工具名不会再自动兜底到 base_generator，这样 Planner 的工具选择错误会暴露在轨迹里，便于 SFT/OPD/RL 修正。只有评测旧 checkpoint 时，才建议临时设置 `AGENTFLOW_ALLOW_TOOL_ALIASES=true` 兼容旧工具名。
 
 这套边界的目标是放大 planner gap：强 Planner 应该能给出更窄、更可执行、更少重复的 sub-goal；弱 Planner 会更频繁得到 `NEEDS_SMALLER_SUBGOAL`、`NEEDS_NUMERIC_SUBGOAL`、解析失败或过早 STOP，从而形成更清晰的 OPD/RL 学习信号。
 
@@ -376,7 +376,9 @@ agentic/agentflow/checkpoint_eval_results.jsonl
 | 工具调用解析失败率 | 判断 Planner/Executor 格式是否稳定 |
 | `NEEDS_*_SUBGOAL` 比例 | 判断 Planner 是否仍在发过宽工具请求 |
 | broad query 恢复率 | 判断 Planner 收到拒绝后能否改写成更小的局部任务 |
-| final_output 无 `\boxed{}` 比例 | 判断答案格式稳定性 |
+| final aggregation 成功率 | 判断 Planner 是否能把轨迹推进到明确最终聚合 |
+| 多候选/候选后错误比例 | 判断工具链是否仍存在噪声污染 |
+| `INSUFFICIENT_TOOL_RESULTS` 比例 | 判断轨迹是否真正走到可奖励的最终候选 |
 
 ## 11. 推荐实验顺序
 
@@ -502,6 +504,6 @@ ROLLOUT_TEMPERATURE=0.7
 
 三分钟版本：
 
-> 我先准备数学训练集和评测集，把 Qwen2.5 1.5B 这类小模型作为本地 Planner，并转换成 slime/Megatron 训练格式。训练时，slime 调用自定义 `rollout.generate()`，让 Planner 对每道题生成多步 agent 轨迹。每一步 Planner 根据题目和 Memory 选择工具，Executor 把它转成工具调用，工具结果写回 Memory，Verifier 判断是否继续。最后 final_output 只汇总 Memory 中已有工具结果生成答案，Rewarder 根据 label 给 0/1 reward。GRPO 对同一题的多条轨迹做组内 reward normalization，`custom_convert` 再把一条多轮轨迹拆成多个 Planner turn 来更新模型。训练后我把 checkpoint 转回 HF，用同一套评测脚本对比原始 Planner、RL Planner 和 API Planner 上限。
+> 我先准备数学训练集和评测集，把 Qwen2.5 1.5B 这类小模型作为本地 Planner，并转换成 slime/Megatron 训练格式。训练时，slime 调用自定义 `rollout.generate()`，让 Planner 对每道题生成多步 agent 轨迹。每一步 Planner 根据题目和 Memory 选择工具，Executor 把它转成工具调用，工具结果写回 Memory，Verifier 判断是否继续；如果 Verifier 想 STOP 但还没有 Planner 标记的 final aggregation，runtime 会强制继续让 Planner 补最后一跳。最后 final_output 只从 Memory 中确定性抽取 Planner 标记的唯一 final aggregation 结果，Rewarder 根据 label 给 0/1 reward。GRPO 对同一题的多条轨迹做组内 reward normalization，`custom_convert` 再把一条多轮轨迹拆成多个 Planner turn 来更新模型。训练后我把 checkpoint 转回 HF，用同一套评测脚本对比原始 Planner、RL Planner 和 API Planner 上限。
 
 这个版本可以先背熟，再根据面试官追问展开。
