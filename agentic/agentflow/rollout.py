@@ -2,13 +2,17 @@ import json
 import os
 import re
 import traceback
+import asyncio
 from pathlib import Path
 from typing import Any
+
+import aiohttp
 
 from slime.rollout.sglang_rollout import GenerateState
 from slime.rollout.rm_hub.math_dapo_utils import last_boxed_only_string, remove_boxed, normalize_final_answer
 from slime.utils.types import Sample
 from slime.utils.metric_utils import compute_rollout_step
+from slime.utils.processing_utils import encode_image_for_rollout_engine
 from core.llm_engine import APIEngine, SGLangEngine
 from core.solver import Solver
 from core.rewarder import Rewarder
@@ -268,48 +272,160 @@ def _extract_final_answer(response: str) -> str:
     return ""
 
 
-async def reward_func(args: Any, sample: Sample, **kwargs) -> dict:
-    """
-    Uses Rewarder.compute_reward (LLM judge) to compare the model answer against the ground truth.
-    Uses the original question stored in metadata rather than the prompt overwritten by the solver.
-    The Rewarder uses the fixed generate_engine (port 30000) instead of the training planner engine,
-    ensuring the reward signal remains stable throughout RL training.
-    """
-    state = GenerateState(args)
-    engine = _api_engine(
-        tokenizer=state.tokenizer,
-        sampling_params={},
-        max_new_tokens=2048,
-        role="rewarder",
-        default_model=_env("AGENTFLOW_EXECUTOR_MODEL", DEFAULT_API_MODEL),
-        default_base=_env("AGENTFLOW_EXECUTOR_API_BASE", DEFAULT_API_BASE),
-        default_key=_env("AGENTFLOW_EXECUTOR_API_KEY", DEFAULT_API_KEY),
-    )
-    rewarder = Rewarder(llm_engine=engine)
+# async def reward_func(args: Any, sample: Sample, **kwargs) -> dict:
+#     """
+#     Uses Rewarder.compute_reward (LLM judge) to compare the model answer against the ground truth.
+#     Uses the original question stored in metadata rather than the prompt overwritten by the solver.
+#     The Rewarder uses the fixed generate_engine (port 30000) instead of the training planner engine,
+#     ensuring the reward signal remains stable throughout RL training.
+#     """
+#     state = GenerateState(args)
+#     engine = _api_engine(
+#         tokenizer=state.tokenizer,
+#         sampling_params={},
+#         max_new_tokens=2048,
+#         role="rewarder",
+#         default_model=_env("AGENTFLOW_EXECUTOR_MODEL", DEFAULT_API_MODEL),
+#         default_base=_env("AGENTFLOW_EXECUTOR_API_BASE", DEFAULT_API_BASE),
+#         default_key=_env("AGENTFLOW_EXECUTOR_API_KEY", DEFAULT_API_KEY),
+#     )
+#     rewarder = Rewarder(llm_engine=engine)
 
-    metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
-    question = metadata.get("original_question", "")
-    if not question:
-        question = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[-1]["content"]
+#     metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+#     question = metadata.get("original_question", "")
+#     if not question:
+#         question = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[-1]["content"]
 
-    label = str(sample.label) if sample.label is not None else ""
+#     label = str(sample.label) if sample.label is not None else ""
 
-    final_output = metadata.get("final_output", "") or sample.response or ""
+#     final_output = metadata.get("final_output", "") or sample.response or ""
 
-    boxed = last_boxed_only_string(final_output)
-    pred = normalize_final_answer(remove_boxed(boxed)) if boxed else _extract_final_answer(final_output)
+#     boxed = last_boxed_only_string(final_output)
+#     pred = normalize_final_answer(remove_boxed(boxed)) if boxed else _extract_final_answer(final_output)
 
-    if pred and label and pred == label:
-        score = 1.0
-    else:
-        score = await rewarder.compute_reward(
-            question=question,
-            model_response=final_output,
-            groundtruth=label,
-        )
-    return {
-        "score": score,
-        "acc": score == 1.0,
-        "pred": pred,
-        "gt": label,
+#     if pred and label and pred == label:
+#         score = 1.0
+#     else:
+#         score = await rewarder.compute_reward(
+#             question=question,
+#             model_response=final_output,
+#             groundtruth=label,
+#         )
+#     return {
+#         "score": score,
+#         "acc": score == 1.0,
+#         "pred": pred,
+#         "gt": label,
+#     }
+
+def _teacher_payload(input_ids: list[int]) -> dict[str, Any]:
+    payload = {
+        "input_ids": input_ids,
+        "sampling_params": {
+            "temperature": 0,
+            "max_new_tokens": 0,
+            "skip_special_tokens": False,
+        },
+        "return_logprob": True,
+        "logprob_start_len": 0,
     }
+    return payload
+
+
+def _trim_teacher_log_probs(teacher_out: dict[str, Any], response_length: int) -> list[float]:
+    """Extract teacher token logprobs aligned to the generated response."""
+    meta = teacher_out.get("meta_info", {})
+    input_logprobs = meta.get("input_token_logprobs")
+    if not input_logprobs:
+        raise ValueError(f"Teacher response missing input_token_logprobs: {teacher_out}")
+
+    # SGLang leaves the first input token without a next-token logprob.
+    token_logprobs = [item[0] for item in input_logprobs[1:]]
+    if response_length <= 0:
+        return []
+    if len(token_logprobs) < response_length:
+        raise ValueError(
+            f"Teacher returned {len(token_logprobs)} token logprobs, "
+            f"but response_length={response_length}."
+        )
+    return [float(x) for x in token_logprobs[-response_length:]]
+
+
+async def _request_teacher_log_probs(
+    session: aiohttp.ClientSession,
+    args: Any,
+    *,
+    input_ids: list[int],
+    response_length: int,
+    multimodal_inputs: dict[str, Any] | None = None,
+) -> list[float]:
+    payload = _teacher_payload(input_ids)
+
+    if multimodal_inputs and multimodal_inputs.get("images"):
+        payload["image_data"] = [
+            encode_image_for_rollout_engine(image)
+            for image in multimodal_inputs["images"]
+        ]
+
+    async with session.post(args.rm_url, json=payload) as resp:
+        resp.raise_for_status()
+        teacher_out = await resp.json()
+    return _trim_teacher_log_probs(teacher_out, response_length)
+
+
+async def reward_func(args: Any, sample: Sample, **kwargs) -> dict[str, Any]:
+    """Fetch teacher logprobs for AgentFlow OPD.
+
+    AgentFlow later expands one trajectory into independent Planner turns in
+    custom_convert.py. Therefore the teacher query is also done per turn so each
+    expanded training sample receives logprobs conditioned on that turn's prompt.
+    The scalar reward is 0.0 for pure OPD; the learning signal comes from the
+    OPD KL term.
+    """
+    if not getattr(args, "rm_url", None):
+        raise ValueError("AgentFlow OPD reward_func requires --rm-url pointing to the teacher /generate endpoint.")
+
+    timeout = aiohttp.ClientTimeout(total=float(os.environ.get("AGENTFLOW_OPD_TEACHER_TIMEOUT", "180")))
+    connector = aiohttp.TCPConnector(limit=int(os.environ.get("AGENTFLOW_OPD_TEACHER_CONN_LIMIT", "64")))
+
+    turns = []
+    if isinstance(sample.train_metadata, dict):
+        turns = list(sample.train_metadata.get("turns") or [])
+
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        if turns:
+            teacher_log_probs = await asyncio.gather(
+                *[
+                    _request_teacher_log_probs(
+                        session,
+                        args,
+                        input_ids=list(turn["tokens"]),
+                        response_length=int(turn["response_length"]),
+                    )
+                    for turn in turns
+                ]
+            )
+            return {
+                "score": 0.0,
+                "acc": False,
+                "opd": {
+                    "mode": "turns",
+                    "teacher_log_probs": teacher_log_probs,
+                },
+            }
+
+        teacher_log_probs = await _request_teacher_log_probs(
+            session,
+            args,
+            input_ids=list(sample.tokens),
+            response_length=int(sample.response_length),
+            multimodal_inputs=sample.multimodal_inputs,
+        )
+        return {
+            "score": 0.0,
+            "acc": False,
+            "opd": {
+                "mode": "sample",
+                "teacher_log_probs": teacher_log_probs,
+            },
+        }

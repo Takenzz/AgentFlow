@@ -116,7 +116,7 @@ MEM_FRACTION=0.65
 
 这个测试不启动本地 Planner，用 API 大模型当 Planner。它能验证数据、工具、Executor、Verifier、Rewarder、final_output 整条 AgentFlow 链路。
 
-注意观察轨迹时不要只看最终 accuracy。现在工具被约束为局部工具：`Local_Math_Deduction_Tool` 只回答一个关系或定理，`Python_Code_Generator_Tool` 只做明确计算，`final_output` 只确定性抽取 Planner 明确标记的唯一 final aggregation 结果；如果 Verifier 想提前 STOP 但还没有 final aggregation，runtime 会继续让 Planner 补最后一跳。如果 Planner 把整题丢给工具，工具应该返回需要更小子目标的提示。这能更清楚地区分“大模型工具直接做题”和“Planner 学会拆解任务”。
+注意观察轨迹时不要只看最终 accuracy。现在工具被约束为局部工具：`Local_Math_Deduction_Tool` 只回答一个关系或定理，`Python_Code_Generator_Tool` 只做明确计算，`final_output` 优先从 Verifier 的 STOP 响应提取答案，不足时用 LLM fallback 从 memory 抽取。如果 Planner 把整题丢给工具，工具应该返回需要更小子目标的提示。这能更清楚地区分“大模型工具直接做题”和“Planner 学会拆解任务”。
 
 ```bash
 USE_API_FOR_PLANNER=1 \
@@ -330,7 +330,7 @@ bash agentic/agentflow/launch.sh
 | 显存不足 | SGLang 启动失败或 CUDA OOM | 降 `CTX_LEN`、`MAX_NEW_TOKENS`、`MEM_FRACTION`、`CONCURRENCY` |
 | API 调用失败 | 429/401/timeout | 检查 key、base、模型名，降低并发 |
 | 本地 Planner 输出乱 | 工具名不合法、格式不对 | 先用 API Planner 跑通，再做 SFT/OPD |
-| 轨迹没有 final_output | final_output 抽取失败或流程异常 | 查 Memory 中是否有唯一成功的 final aggregation 步骤 |
+| 轨迹没有 final_output | final_output 提取失败或流程异常 | 检查 Verifier 响应是否含 `\boxed{...}` 或 fallback LLM 是否成功 |
 | score 全 0 | 答案格式或 judge 问题 | 看 `final_output` 和 `pred` 抽取 |
 | 评测太慢 | 每题多步 API 调用 | 降 `MAX_STEPS`、`NUM_SAMPLES`、`CONCURRENCY` |
 | baseline 默认想用 7B/TP=4 | 单卡起不来 | 显式设置 `MODEL_PATH`、`TOKENIZER_PATH`、`TP=1` |

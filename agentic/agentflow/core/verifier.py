@@ -18,6 +18,7 @@ class Verifier:
 
         prompt_memory_verification = f"""
 Task: Evaluate whether the accumulated tool results are sufficient, or whether more tool calls are needed.
+When sufficient, extract the final answer from the Memory and output it in a boxed format.
 
 Context:
 - **Query:** {question}
@@ -32,15 +33,15 @@ Instructions:
 3.  Do NOT solve the problem yourself, derive new formulas, perform arithmetic, or fill in missing reasoning.
 4.  If Memory contains a tool error, an unknown tool, NEEDS_SMALLER_SUBGOAL, NEEDS_NUMERIC_SUBGOAL, or an incomplete local result, conclude CONTINUE.
 5.  If Memory contains contradictory results for the same target, conclude CONTINUE unless another tool result explicitly resolves the contradiction.
-6.  Conclude STOP only when Memory contains one unique successful computation step whose Planner Sub-Goal is a narrow final aggregation over recorded intermediate values.
-7.  If all required intermediate values are present but no final aggregation computation exists, conclude CONTINUE and ask for one narrow computation-tool aggregation step. The tool should only compute the specified value; it should not decide global sufficiency.
+6.  Conclude STOP when Memory contains sufficient successful tool results to answer the original query. Read the final numerical or symbolic answer directly from the tool results.
+7.  If all required intermediate values are present but none of the tool results explicitly states the requested final value, conclude CONTINUE and ask for one computation step that produces that value from the recorded intermediates.
 8.  If more information is needed, name the smallest missing local sub-goal and the tool type that could provide it.
 
 Final Determination:
--   If Memory is sufficient, explain why and conclude with "Conclusion: STOP".
+-   If Memory is sufficient, state the final answer and conclude with "Final Answer: \\boxed{{answer}}" followed by "Conclusion: STOP".
 -   If more information is needed, explain what is missing and conclude with "Conclusion: CONTINUE".
 
-IMPORTANT: The response must end with either "Conclusion: STOP" or "Conclusion: CONTINUE".
+IMPORTANT: The response must end with either "Final Answer: \\boxed{{...}}" or "Conclusion: CONTINUE".
 """
         messages = [{"role": "user", "content": prompt_memory_verification}]
         verifier_out = await self.llm_engine.generate(messages)
@@ -49,7 +50,20 @@ IMPORTANT: The response must end with either "Conclusion: STOP" or "Conclusion: 
         logger.debug("verifier conclusion: %s", conclusion)
         return analysis, conclusion, verifier_out
 
-    def parse_conclusion(self, response: str) -> tuple[str, str]:
+    @staticmethod
+    def parse_final_answer(response: str) -> str | None:
+        match = re.search(r'Final\s+Answer:\s*\\boxed\{([^{}]+)\}', response, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r'\\boxed\{([^{}]+)\}', response)
+        if match:
+            candidate = match.group(1).strip()
+            if candidate.upper() not in {"INSUFFICIENT_TOOL_RESULTS", "NONE", "UNKNOWN"}:
+                return candidate
+        return None
+
+    @staticmethod
+    def parse_conclusion(response: str) -> tuple[str, str]:
         analysis = response
         pattern = r'conclusion\**:?\s*\**\s*(STOP|CONTINUE)\b'
         matches = list(re.finditer(pattern, response, re.IGNORECASE))

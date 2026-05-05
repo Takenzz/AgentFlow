@@ -9,15 +9,112 @@ Usage:
 """
 
 import logging
+from collections.abc import Sequence
+from typing import Any
 
 import torch
+from slime.utils.types import Sample
 
 logger = logging.getLogger(__name__)
 
 
+def _to_float_list(values: Any) -> list[float]:
+    if isinstance(values, torch.Tensor):
+        values = values.detach().cpu().tolist()
+    return [float(v) for v in values]
+
+
+def _is_nested_log_probs(value: Any) -> bool:
+    if isinstance(value, torch.Tensor):
+        return value.ndim > 1
+    return bool(value) and isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and isinstance(
+        value[0], (list, tuple, torch.Tensor)
+    )
+
+
+def _trim_sglang_teacher_output(teacher_out: dict[str, Any], response_length: int) -> list[float]:
+    meta = teacher_out.get("meta_info", {})
+    input_logprobs = meta.get("input_token_logprobs")
+    if not input_logprobs:
+        raise ValueError("teacher output is missing meta_info.input_token_logprobs")
+    token_logprobs = [item[0] for item in input_logprobs[1:]]
+    if response_length <= 0:
+        return []
+    if len(token_logprobs) < response_length:
+        raise ValueError(
+            f"teacher output has {len(token_logprobs)} token logprobs, "
+            f"but response_length={response_length}"
+        )
+    return [float(x) for x in token_logprobs[-response_length:]]
+
+
+def _get_scalar_reward(args, sample: Sample) -> float:
+    try:
+        return float(sample.get_reward_value(args))
+    except Exception:
+        reward = sample.reward
+        if isinstance(reward, dict):
+            for key in (getattr(args, "reward_key", None), "score", "reward"):
+                if key and key in reward:
+                    return float(reward[key])
+            # Pure OPD reward_func may carry only teacher data.
+            if "opd" in reward or "meta_info" in reward or "teacher_log_probs" in reward:
+                return 0.0
+        if reward is None:
+            return 0.0
+        return float(reward)
+
+
+def _extract_teacher_log_probs_from_reward(sample: Sample, response_length: int) -> list[float] | None:
+    if sample.teacher_log_probs is not None:
+        return _to_float_list(sample.teacher_log_probs)
+
+    reward = sample.reward
+    if not isinstance(reward, dict):
+        return None
+
+    opd_payload = reward.get("opd")
+    if isinstance(opd_payload, dict) and "teacher_log_probs" in opd_payload:
+        log_probs = opd_payload["teacher_log_probs"]
+        if _is_nested_log_probs(log_probs):
+            return None
+        return _to_float_list(log_probs)
+
+    if "teacher_log_probs" in reward:
+        log_probs = reward["teacher_log_probs"]
+        if _is_nested_log_probs(log_probs):
+            return None
+        return _to_float_list(log_probs)
+
+    if "meta_info" in reward:
+        return _trim_sglang_teacher_output(reward, response_length)
+
+    return None
+
+
+def _extract_teacher_log_probs_by_turn(sample: Sample, turns: list[dict]) -> list[list[float]] | None:
+    reward = sample.reward
+    if isinstance(reward, dict):
+        opd_payload = reward.get("opd")
+        if isinstance(opd_payload, dict) and "teacher_log_probs" in opd_payload:
+            log_probs = opd_payload["teacher_log_probs"]
+            if _is_nested_log_probs(log_probs):
+                return [_to_float_list(item) for item in log_probs]
+
+        if "teacher_log_probs" in reward:
+            log_probs = reward["teacher_log_probs"]
+            if _is_nested_log_probs(log_probs):
+                return [_to_float_list(item) for item in log_probs]
+
+    if sample.teacher_log_probs is not None and _is_nested_log_probs(sample.teacher_log_probs):
+        return [_to_float_list(item) for item in sample.teacher_log_probs]
+
+    return None
+
+
 def custom_convert(args, samples):
     # ── 1. Trajectory-level GRPO reward normalization ──
-    raw_rewards = [s.get_reward_value(args) for s in samples]
+    raw_rewards = [_get_scalar_reward(args, s) for s in samples]
     rewards_tensor = torch.tensor(raw_rewards, dtype=torch.float)
 
     if (
@@ -52,6 +149,9 @@ def custom_convert(args, samples):
     sample_indices = []
     rollout_log_probs_list = []
     has_rollout_log_probs = False
+    teacher_log_probs_list = []
+    has_teacher_log_probs = False
+    require_teacher_log_probs = bool(getattr(args, "use_opd", False) and getattr(args, "opd_type", None) == "sglang")
 
     for i, sample in enumerate(samples):
         meta = sample.train_metadata
@@ -69,6 +169,12 @@ def custom_convert(args, samples):
             if sample.rollout_log_probs is not None:
                 rollout_log_probs_list.append(sample.rollout_log_probs)
                 has_rollout_log_probs = True
+            teacher_log_probs = _extract_teacher_log_probs_from_reward(sample, sample.response_length)
+            if teacher_log_probs is not None:
+                teacher_log_probs_list.append(teacher_log_probs)
+                has_teacher_log_probs = True
+            elif require_teacher_log_probs:
+                raise ValueError(f"OPD requires teacher_log_probs for sample index={sample.index}")
             continue
 
         turns = meta["turns"]
@@ -76,8 +182,17 @@ def custom_convert(args, samples):
         # matching the J_Flow-GRPO objective which averages across turns.
         norm_reward = normalized_rewards[i] / len(turns)
         is_truncated = 1 if sample.status == sample.Status.TRUNCATED else 0
+        teacher_log_probs_by_turn = _extract_teacher_log_probs_by_turn(sample, turns)
+        if require_teacher_log_probs and (
+            teacher_log_probs_by_turn is None or len(teacher_log_probs_by_turn) != len(turns)
+        ):
+            got = None if teacher_log_probs_by_turn is None else len(teacher_log_probs_by_turn)
+            raise ValueError(
+                f"OPD requires one teacher_log_probs list per AgentFlow turn "
+                f"(sample index={sample.index}, expected={len(turns)}, got={got})"
+            )
 
-        for turn in turns:
+        for turn_idx, turn in enumerate(turns):
             tokens_list.append(turn["tokens"])
             response_lengths.append(turn["response_length"])
             lm = list(turn["loss_mask"])
@@ -91,6 +206,16 @@ def custom_convert(args, samples):
             if turn.get("rollout_log_probs"):
                 rollout_log_probs_list.append(turn["rollout_log_probs"])
                 has_rollout_log_probs = True
+            if teacher_log_probs_by_turn is not None:
+                teacher_log_probs = teacher_log_probs_by_turn[turn_idx]
+                if len(teacher_log_probs) != turn["response_length"]:
+                    raise ValueError(
+                        f"teacher_log_probs length {len(teacher_log_probs)} != "
+                        f"turn response_length {turn['response_length']} "
+                        f"(sample index={sample.index}, turn={turn_idx})"
+                    )
+                teacher_log_probs_list.append(teacher_log_probs)
+                has_teacher_log_probs = True
 
     # ── 3. Trim to global_batch_size multiple ──
     # After turn expansion the sample count is no longer guaranteed to be
@@ -117,6 +242,8 @@ def custom_convert(args, samples):
         sample_indices = sample_indices[:trim_to]
         if has_rollout_log_probs:
             rollout_log_probs_list = rollout_log_probs_list[:trim_to]
+        if has_teacher_log_probs:
+            teacher_log_probs_list = teacher_log_probs_list[:trim_to]
 
     train_data = {
         "tokens": tokens_list,
@@ -129,5 +256,47 @@ def custom_convert(args, samples):
     }
     if has_rollout_log_probs:
         train_data["rollout_log_probs"] = rollout_log_probs_list
+    if has_teacher_log_probs:
+        if len(teacher_log_probs_list) != len(tokens_list):
+            if require_teacher_log_probs:
+                raise ValueError(
+                    f"OPD teacher_log_probs count {len(teacher_log_probs_list)} "
+                    f"does not match expanded sample count {len(tokens_list)}"
+                )
+            logger.warning(
+                "custom_convert: dropping partial teacher_log_probs (%d/%d)",
+                len(teacher_log_probs_list),
+                len(tokens_list),
+            )
+        else:
+            train_data["teacher_log_probs"] = teacher_log_probs_list
 
     return train_data
+
+
+def post_process_rewards(args, samples: list[Sample], **kwargs):
+    """Process rewards from teacher model and extract teacher log probabilities.
+
+    This function:
+    1. Extracts teacher log-probs from the reward response (which contains sglang's logprob output)
+    2. Trims them to match the response length
+    3. Stores them in sample.teacher_log_probs for OPD KL penalty computation
+    4. Returns scalar rewards (0.0 for pure distillation) compatible with GRPO/PPO
+
+    Note: The reward_func calls the teacher server which returns token-level log-probs.
+    For pure on-policy distillation without task rewards, we return 0.0 for each sample.
+    The actual learning signal comes from the OPD KL penalty applied in compute_advantages_and_returns.
+    """
+    scalar_rewards = [_get_scalar_reward(args, sample) for sample in samples]
+
+    for sample in samples:
+        t_log_probs = _extract_teacher_log_probs_from_reward(sample, sample.response_length)
+        if t_log_probs is None:
+            raise ValueError(f"OPD requires teacher_log_probs for sample index={sample.index}")
+        sample.teacher_log_probs = torch.tensor(t_log_probs, dtype=torch.float32)
+
+    # Return scalar rewards for GRPO/PPO advantage estimator
+    # For pure on-policy distillation, we use 0.0 as the task reward.
+    # The learning signal comes entirely from the OPD KL penalty.
+    # If you have task rewards, you can add them here.
+    return scalar_rewards, scalar_rewards

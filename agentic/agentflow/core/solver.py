@@ -22,7 +22,6 @@ class Solver:
             "verifier": qwen_engine,
         }
     "planner" automatically falls back to "default" when not specified.
-    "final_output" is deterministic and does not use an engine.
     """
 
     MAX_TOTAL_TOKENS = 131072
@@ -88,6 +87,8 @@ class Solver:
         finish_reason = analysis.finish_reason
         trajectory["analysis"] = analysis.response
 
+        last_verifier_response = ""
+
         for step_count in range(self.max_steps):
             try:
                 # ── next_step (independent training sequences #1, #2, ...) ──
@@ -133,28 +134,17 @@ class Solver:
                 f"\n===== [execution_result] =====\n{execution_result}"
             )
 
-            # ── Verifier (not included in training sequences); used only to decide whether to continue ──
+            # ── Verifier (not included in training sequences); used to decide whether to continue and extract answer ──
             verifier_failed = False
             try:
-                _, conclusion, _ = await self.verifier.verificate_context(
+                _, conclusion, verifier_out = await self.verifier.verificate_context(
                     question, analysis.response, step_count=step_count, memory=memory,
                 )
+                last_verifier_response = verifier_out.response
             except Exception as e:
                 logger.warning("[step %d] verifier failed: %s", step_count, e)
                 conclusion = "STOP"
                 verifier_failed = True
-
-            if (
-                conclusion == "STOP"
-                and not verifier_failed
-                and not self.planner.has_successful_planner_marked_final_aggregation(memory)
-                and step_count < self.max_steps - 1
-            ):
-                logger.debug(
-                    "[step %d] verifier STOP overridden: final aggregation missing",
-                    step_count,
-                )
-                conclusion = "CONTINUE_FINAL_AGGREGATION_REQUIRED"
 
             logger.debug("[step %d] conclusion: %s", step_count, conclusion)
             response_text += f"\n===== [verifier] conclusion={conclusion} =====\n"
@@ -179,22 +169,36 @@ class Solver:
                             total_token_count, self.MAX_TOTAL_TOKENS, step_count)
                 break
 
-        # ── final_output (deterministic extraction; not added to training turns) ──
-        # Reward is computed from this response, but it does not contribute to loss.
+        # ── final_output: try Verifier-extracted answer first, then LLM fallback ──
         final_output_text = ""
-        try:
-            final_output = await self.planner.generate_final_output(
-                analysis.response, question, memory
-            )
-            final_output_text = final_output.response
-            response_text += (
-                f"\n\n===== [final_output prompt] =====\n{final_output.prompt_text}"
-                f"\n===== [final_output response] =====\n{final_output.response}"
-            )
-            trajectory["final_output"] = final_output.response
-        except Exception as e:
-            logger.warning("planner.generate_final_output failed: %s", e)
-            trajectory["final_output"] = ""
+        final_answer = self.verifier.parse_final_answer(last_verifier_response) if last_verifier_response else None
+
+        if not final_answer:
+            try:
+                logger.debug("no answer from verifier, falling back to LLM extraction")
+                fallback_prompt = (
+                    "Extract the final answer from the tool results below. "
+                    "Output only the answer in \\boxed{{...}} format. "
+                    "If no answer can be determined, output \\boxed{{INSUFFICIENT_TOOL_RESULTS}}.\n\n"
+                    f"Query: {question}\n"
+                    f"Tool Results: {memory.get_actions()}"
+                )
+                fallback_out = await self.verifier.llm_engine.generate(
+                    [{"role": "user", "content": fallback_prompt}]
+                )
+                final_answer = self.verifier.parse_final_answer(fallback_out.response)
+            except Exception as e:
+                logger.warning("LLM fallback answer extraction failed: %s", e)
+
+        if final_answer:
+            final_output_text = f"\\boxed{{{final_answer}}}"
+        else:
+            final_output_text = "\\boxed{INSUFFICIENT_TOOL_RESULTS}"
+
+        response_text += (
+            f"\n\n===== [final_output] =====\n{final_output_text}"
+        )
+        trajectory["final_output"] = final_output_text
         trajectory["full_response"] = response_text
 
         self._save_trajectory(trajectory)
